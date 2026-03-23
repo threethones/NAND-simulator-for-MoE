@@ -33,8 +33,8 @@ class NandSimulatorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("NAND Flash MoE Simulator")
-        self.root.geometry("900x700")
-        self.root.minsize(800, 600)
+        self.root.geometry("1200x900")
+        self.root.minsize(1000, 700)
         
         # 创建主框架
         self.create_widgets()
@@ -175,7 +175,7 @@ class NandSimulatorGUI:
         main_frame.rowconfigure(6, weight=1)
         
         self.result_text = scrolledtext.ScrolledText(result_frame, wrap=tk.WORD, 
-                                                     width=80, height=20, font=("Consolas", 9))
+                                                     width=100, height=35, font=("Consolas", 10))
         self.result_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         # 状态栏
