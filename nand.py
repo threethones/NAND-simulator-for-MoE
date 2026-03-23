@@ -769,39 +769,20 @@ def print_sequential_latency_table(
         # Quiet模式：直接返回结果，不打印表格
         return r
 
-    # ANSI 颜色代码
-    C_RESET = '\033[0m'
-    C_BOLD = '\033[1m'
-    C_DIM = '\033[2m'
-    C_RED = '\033[91m'      # tR
-    C_GREEN = '\033[92m'    # tX
-    C_YELLOW = '\033[93m'   # saved
-    C_BLUE = '\033[94m'     # hid/down
-    C_MAGENTA = '\033[95m'  # inter
-    C_CYAN = '\033[96m'     # prefetch/intra/up
-    C_WHITE = '\033[97m'    # highlight
-    C_GRAY = '\033[90m'     # dim text
-    
-    def fmt_colored(val, color, width=8, fmt='.2f'):
-        """带颜色的数值格式化，0值显示为灰色"""
-        if val == 0 or val == 0.0:
-            return f"{C_GRAY}{0:>{width}{fmt}}{C_RESET}"
-        return f"{color}{val:>{width}{fmt}}{C_RESET}"
-
     print(f"\n{'='*W}")
     print(f"  Sequential Read : experts={expert_ids}")
-    print(f"  {C_RED}tR={tR_us:.1f}us{C_RESET}  {C_GREEN}tX={tX_us:.4f}us{C_RESET}  "
+    print(f"  tR={tR_us:.1f}us  tX={tX_us:.4f}us  "
           f"intra={'ON' if intra_expert_cache else 'OFF'}  "
           f"inter={'ON' if inter_expert_cache else 'OFF'}")
     print(f"{'='*W}")
-    print(f"\n  {C_BOLD}[Step Detail]{C_RESET}")
+    print(f"\n  [Step Detail]")
     # 表头 - 使用简单ASCII
     header = (f"  {'EID':>4} {'PART':>6} | "
-              f"{C_RED}{'tR(us)':>7}{C_RESET} {C_BLUE}{'hid(us)':>8}{C_RESET} | "
-              f"{C_GREEN}{'tX(us)':>8}{C_RESET} {C_YELLOW}{'saved(us)':>10}{C_RESET} | "
+              f"{'tR(us)':>7} {'hid(us)':>8} | "
+              f"{'tX(us)':>8} {'saved(us)':>10} | "
               f"{'time(us)':>8} | Note")
     print(header)
-    print(f"  {'-'*105}")
+    print(f"  {'-'*90}")
 
     steps    = [(eid, part) for eid in expert_ids for part in part_order]
     prev_eid = None
@@ -810,35 +791,36 @@ def print_sequential_latency_table(
     for i, (eid, part) in enumerate(steps):
         st    = r["step_stats"][(eid, part)]
         
-        # 构建 notes 带颜色
+        # 构建 notes
         notes_parts = []
         if prev_eid is not None and eid != prev_eid:
-            notes_parts.append(f"{C_MAGENTA}<= inter(E{prev_eid}->E{eid}){C_RESET}")
+            notes_parts.append(f"[inter E{prev_eid}->E{eid}]")
         if st["cached_planes"] > 0:
             src = "intra" if (prev_eid == eid) else "inter"
-            color = C_CYAN if src == "intra" else C_MAGENTA
-            notes_parts.append(f"{color}[prefetch:{st['cached_planes']}pl]{C_RESET}")
+            notes_parts.append(f"[prefetch-{src}:{st['cached_planes']}pl]")
         if st["tr_sec"] == 0.0 and st["crit_planes"] > 0:
-            notes_parts.append(f"{C_GREEN}[tR saved]{C_RESET}")
+            notes_parts.append("[tR saved]")
         
-        notes_str = ' '.join(notes_parts) if notes_parts else f"{C_GRAY}-.{C_RESET}"
+        notes_str = ' '.join(notes_parts) if notes_parts else "-"
 
-        # 格式化数据行 - 带颜色
-        tr_str = fmt_colored(st['tr_sec']*1e6, C_RED, 7)
-        hid_str = fmt_colored(st['hid_sec']*1e6, C_BLUE, 8)
-        tx_str = fmt_colored(st['crit_tx_sec']*1e6, C_GREEN, 8)
-        saved_str = fmt_colored(st['saved_sec']*1e6, C_YELLOW, 10)
+        # 格式化数据行 - 0值显示为 "  -  "
+        tr_val = st['tr_sec']*1e6
+        hid_val = st['hid_sec']*1e6
+        tx_val = st['crit_tx_sec']*1e6
+        saved_val = st['saved_sec']*1e6
+        
+        tr_str = f"{tr_val:>7.2f}" if tr_val > 0 else "     -  "
+        hid_str = f"{hid_val:>8.2f}" if hid_val > 0 else "      -  "
+        tx_str = f"{tx_val:>8.2f}" if tx_val > 0 else "      -  "
+        saved_str = f"{saved_val:>10.2f}" if saved_val > 0 else "        -  "
         time_str = f"{st['time_sec']*1e6:>8.2f}"
         
-        # 每3行（每个expert的第一行）高亮EID
+        # 每3行（每个expert的第一行）用空行分隔
         is_first_step = (i % len(part_order) == 0)
-        eid_str = f"{C_BOLD}{eid:>4}{C_RESET}" if is_first_step else f"{eid:>4}"
+        if is_first_step and i > 0:
+            print()
         
-        # PART颜色
-        part_colors = {'gate': C_RED, 'up': C_CYAN, 'down': C_BLUE}
-        part_str = f"{part_colors.get(part, C_WHITE)}{part:>6}{C_RESET}"
-        
-        print(f"  {eid_str} {part_str} | "
+        print(f"  {eid:>4} {part:>6} | "
               f"{tr_str} {hid_str} | "
               f"{tx_str} {saved_str} | "
               f"{time_str} | {notes_str}")
