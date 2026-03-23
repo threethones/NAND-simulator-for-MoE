@@ -572,7 +572,8 @@ def estimate_sequential_latency(
     if part_order is None:
         part_order = ["gate", "up", "down"]
 
-    tX_sec = sim.geo.page_size_bytes / (bw_total_Bps / sim.geo.channels)
+    # bw_total_Bps 是单通道带宽
+    tX_sec = sim.geo.page_size_bytes / bw_total_Bps
     steps: List[Tuple[int, str]] = [(eid, part) for eid in expert_ids for part in part_order]
 
     cache_pages:    Set[SliceKey] = set()
