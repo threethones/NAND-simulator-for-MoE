@@ -248,6 +248,23 @@ class NandSimulatorGUI:
         self.result_text.delete(1.0, tk.END)
         self.status_var.set("输出已清除")
     
+    def _show_layout_in_main_thread(self):
+        """在主线程中显示布局图（避免 matplotlib 多线程警告）"""
+        if hasattr(self, '_viz_data'):
+            try:
+                sim = self._viz_data['sim']
+                expert_ids = self._viz_data['expert_ids']
+                layout = self._viz_data['layout']
+                # 使用 block=False 让 GUI 不会被阻塞，同时关闭交互模式避免警告
+                import matplotlib.pyplot as plt
+                plt.ioff()  # 关闭交互模式
+                visualize_layout(sim, expert_ids=expert_ids, max_pages=20,
+                               title=f"Expert Layout ({layout})", block=True)
+            except Exception as e:
+                print(f"\n[显示布局图失败: {e}]")
+            finally:
+                delattr(self, '_viz_data')
+    
     def run_simulation(self):
         """在后台线程运行仿真"""
         self.status_var.set("正在运行仿真...")
@@ -339,20 +356,17 @@ class NandSimulatorGUI:
                     except Exception as e:
                         print(f"\n[可视化失败: {e}]")
                 
-                # 显示布局图（如果用户选择）
+                # 显示布局图（如果用户选择）- 延迟到主线程执行
                 if show_viz:
-                    try:
-                        # 在新线程中显示，避免阻塞 GUI
-                        import threading
-                        def show_layout():
-                            visualize_layout(sim, expert_ids=expert_ids, max_pages=20,
-                                           title=f"Expert Layout ({layout})", block=True)
-                        viz_thread = threading.Thread(target=show_layout)
-                        viz_thread.daemon = True
-                        viz_thread.start()
-                        print(f"\n[正在显示布局图...]")
-                    except Exception as e:
-                        print(f"\n[显示布局图失败: {e}]")
+                    print(f"\n[正在准备布局图...]")
+                    # 保存 sim 和参数供后续使用
+                    self._viz_data = {
+                        'sim': sim,
+                        'expert_ids': expert_ids,
+                        'layout': layout
+                    }
+                    # 使用 after 在主线程中延迟显示
+                    self.root.after(100, self._show_layout_in_main_thread)
                 
                 # 顺序延迟仿真
                 result = print_sequential_latency_table(
