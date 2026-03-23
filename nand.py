@@ -745,6 +745,7 @@ def print_sequential_latency_table(
     intra_expert_cache: bool = True,
     inter_expert_cache: bool = True,
     csv_path: Optional[str] = None,
+    quiet: bool = False,
 ) -> dict:
     if part_order is None:
         part_order = ["gate", "up", "down"]
@@ -760,6 +761,10 @@ def print_sequential_latency_table(
     tX_us = r["tX_sec"] * 1e6
     tR_us = tR_sec * 1e6
     W = 125
+    
+    if quiet:
+        # Quiet模式：直接返回结果，不打印表格
+        return r
 
     print(f"\n{'='*W}")
     print(f"  Sequential Read : experts={expert_ids}")
@@ -811,6 +816,34 @@ def print_sequential_latency_table(
         print(f"  {eid:>4}  {s['tr_sec']*1e6:>8.2f} {s['crit_tx_sec']*1e6:>9.2f} "
               f"{s['cached_planes']:>6} {s['saved_sec']*1e6:>10.2f} {s['bytes']:>12,}")
 
+    # ========== 带宽分析 ==========
+    # 计算各项时间
+    total_time = r['total_time_sec']
+    pure_tx_time = r['tx_total_sec']  # 纯数据传输时间
+    tr_time = r['tr_total_sec']       # 总tR时间
+    hid_time = r['hid_total_sec']     # 被掩盖的tR时间
+    effective_tr_time = tr_time - hid_time  # 实际阻塞的tR时间
+    
+    # 计算节省的时间
+    total_saved_tx = sum(r['step_stats'][k]['saved_tx_sec'] for k in r['step_stats'])
+    total_saved_tr = sum(r['step_stats'][k]['saved_tr_sec'] for k in r['step_stats'])
+    
+    # 理论峰值带宽（假设只有TX，无tR）
+    theoretical_bw = bw_total_Bps
+    
+    # 实际有效带宽
+    effective_bw = r['effective_bw_Bps']
+    
+    # 带宽利用率
+    bw_utilization = (effective_bw / theoretical_bw) * 100 if theoretical_bw > 0 else 0
+    
+    # 如果没有tR延迟时的带宽（理想情况）
+    ideal_time_if_no_tr = pure_tx_time
+    ideal_bw_if_no_tr = r['total_bytes'] / ideal_time_if_no_tr if ideal_time_if_no_tr > 0 else theoretical_bw
+    
+    # 计算各类开销导致的带宽损失
+    tr_overhead_time = effective_tr_time  # tR造成的额外时间
+    
     print(f"\n  [Global Summary]")
     print(f"  {'N_rows':>14} : {r['N_rows']}")
     print(f"  {'tR_total':>14} : {r['tr_total_sec']*1e6:.2f} us")
@@ -818,7 +851,76 @@ def print_sequential_latency_table(
     print(f"  {'hid_total':>14} : {r['hid_total_sec']*1e6:.2f} us")
     print(f"  {'TOTAL':>14} : {r['total_time_sec']*1e6:.2f} us")
     print(f"  {'total_bytes':>14} : {r['total_bytes']:,} bytes")
-    print(f"  {'eff_BW':>14} : {r['effective_bw_Bps']/1e9:.3f} GB/s")
+    
+    print(f"\n  [Bandwidth Analysis]")
+    print(f"  {'='*50}")
+    print(f"  {'Theoretical BW':>20} : {theoretical_bw/1e9:>8.3f} GB/s (额定带宽)")
+    print(f"  {'Effective BW':>20} : {effective_bw/1e9:>8.3f} GB/s (实际带宽)")
+    print(f"  {'Utilization':>20} : {bw_utilization:>8.2f} %")
+    print(f"  {'-'*50}")
+    
+    # 带宽损失分解
+    print(f"\n  [Bandwidth Loss Breakdown]")
+    print(f"  {'='*50}")
+    
+    # 1. tR延迟导致的损失（未掩盖部分）
+    if total_time > 0:
+        tr_loss_pct = (effective_tr_time / total_time) * 100
+        print(f"  1. tR Latency Overhead")
+        print(f"     {'- Blocked tR time':>22} : {effective_tr_time*1e6:>8.2f} us ({tr_loss_pct:.1f}%)")
+        print(f"     {'- Hid (overlapped)':>22} : {hid_time*1e6:>8.2f} us (saved)")
+    
+    # 2. 预取带来的收益
+    if total_saved_tx > 0 or total_saved_tr > 0:
+        print(f"\n  2. Prefetch Benefits")
+        tx_saved_pct = (total_saved_tx / total_time) * 100 if total_time > 0 else 0
+        tr_saved_pct = (total_saved_tr / total_time) * 100 if total_time > 0 else 0
+        print(f"     {'- TX saved':>22} : {total_saved_tx*1e6:>8.2f} us ({tx_saved_pct:.1f}%)")
+        print(f"     {'- tR saved':>22} : {total_saved_tr*1e6:>8.2f} us ({tr_saved_pct:.1f}%)")
+    
+    # 3. Page粒度损失（如果所有page都未满）
+    # 计算每个page的有效数据利用率
+    total_pages_accessed = sum(len(r['step_stats'][k].get('_dist_row_ch', {})) for k in r['step_stats'])
+    if total_pages_accessed > 0:
+        avg_page_util = (r['total_bytes'] / sim.geo.page_size_bytes) / total_pages_accessed * 100
+        if avg_page_util < 100:
+            page_granularity_loss = 100 - avg_page_util
+            print(f"\n  3. Page Granularity Loss")
+            print(f"     {'- Page utilization':>22} : {avg_page_util:>8.1f}% (avg)")
+            print(f"     {'- Wasted per page':>22} : {page_granularity_loss:>8.1f}% internal fragmentation")
+    
+    # 4. 关键路径瓶颈分析
+    # 找出最关键的channel
+    max_planes_per_step = []
+    for k, st in r['step_stats'].items():
+        dist = st.get('_dist_row_ch', {})
+        if dist:
+            for pg, ch_dict in dist.items():
+                max_planes_per_step.append(max(ch_dict.values()))
+    if max_planes_per_step:
+        avg_planes = sum(max_planes_per_step) / len(max_planes_per_step)
+        max_possible_planes = sim.geo.planes_per_channel
+        ch_parallel_util = (avg_planes / max_possible_planes) * 100
+        print(f"\n  4. Channel Parallelism")
+        print(f"     {'- Avg planes/CH':>22} : {avg_planes:>8.1f} / {max_possible_planes}")
+        print(f"     {'- Parallel util':>22} : {ch_parallel_util:>8.1f}% (per-page)")
+    
+    print(f"\n  [Recommendations]")
+    print(f"  {'='*50}")
+    if bw_utilization < 50:
+        print(f"  [!] 带宽利用率较低 ({bw_utilization:.1f}%)，建议：")
+        if effective_tr_time > pure_tx_time * 0.5:
+            print(f"     - tR延迟占比较高，考虑增大page_size或增加预取")
+        if intra_expert_cache and total_saved_tx < pure_tx_time * 0.1:
+            print(f"     - intra预取效果有限，确认布局是否为pl-first")
+    else:
+        print(f"  [OK] 带宽利用率良好 ({bw_utilization:.1f}%)")
+    
+    if not intra_expert_cache and not inter_expert_cache:
+        print(f"  [TIP] 建议启用--intra和--inter预取以提升性能")
+    elif not inter_expert_cache and len(expert_ids) > 1:
+        print(f"  [TIP] 建议启用--inter预取以提升多专家场景性能")
+    
     print(f"{'='*W}\n")
 
     if csv_path:
@@ -834,32 +936,182 @@ def print_sequential_latency_table(
 #  入口示例                                                            #
 # ================================================================== #
 
+def parse_expert_ids(value: str) -> List[int]:
+    """解析 expert_ids，支持 '0,1,2,3' 或 '0-5' 或 '0-3,5,7-9' 格式"""
+    result = []
+    for part in value.split(','):
+        part = part.strip()
+        if '-' in part:
+            start, end = part.split('-')
+            result.extend(range(int(start), int(end) + 1))
+        else:
+            result.append(int(part))
+    return result
+
+
+def main():
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        description='NAND Flash MoE Simulator - 模拟MoE专家存储在NAND上的读取行为',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  nand.exe -c 8 -p 8 -s 16384 --bw 30e9 --tr 22e-6 -e 0,1,2,3
+  nand.exe -c 8 -p 8 --layout pl-first -e 0-9 --csv result.csv
+  nand.exe --experts 0,1,5 --intra --inter --viz layout.png
+        """
+    )
+    
+    # 硬件几何参数
+    hw_group = parser.add_argument_group('硬件几何参数 (NAND Geometry)')
+    hw_group.add_argument('-c', '--channels', type=int, default=8,
+                          help='NAND通道数 (默认: 8)')
+    hw_group.add_argument('-p', '--planes', type=int, default=8,
+                          help='每通道平面数 (默认: 8)')
+    hw_group.add_argument('-s', '--page-size', type=int, default=16384,
+                          help='每页字节数 (默认: 16384 = 16KB)')
+    
+    # 性能参数
+    perf_group = parser.add_argument_group('性能参数 (Performance)')
+    perf_group.add_argument('--bw', type=float, default=30e9,
+                            help='总带宽 (字节/秒，默认: 30e9 = 30GB/s)')
+    perf_group.add_argument('--tr', type=float, default=22e-6,
+                            help='读延迟tR (秒，默认: 22e-6 = 22us)')
+    
+    # 专家参数
+    expert_group = parser.add_argument_group('专家参数 (Expert)')
+    expert_group.add_argument('-e', '--experts', type=str, default='0,1,2',
+                              help='要模拟的专家ID列表，支持逗号或范围格式，如 "0,1,2" 或 "0-9" 或 "0-3,5,7-9" (默认: 0,1,2)')
+    expert_group.add_argument('--num-experts', type=int, default=10,
+                              help='总专家数量，用于布局 (默认: 10)')
+    expert_group.add_argument('--gate-bytes', type=int, default=294912,
+                              help='gate部分字节数 (默认: 294912 = 288KB)')
+    expert_group.add_argument('--up-bytes', type=int, default=294912,
+                              help='up部分字节数 (默认: 294912 = 288KB)')
+    expert_group.add_argument('--down-bytes', type=int, default=294912,
+                              help='down部分字节数 (默认: 294912 = 288KB)')
+    
+    # 布局选项
+    layout_group = parser.add_argument_group('布局选项 (Layout)')
+    layout_group.add_argument('--layout', choices=['ch-first', 'pl-first'], default='pl-first',
+                              help='布局方式: ch-first (默认，预取不触发) 或 pl-first (预取优化) (默认: pl-first)')
+    
+    # 缓存选项
+    cache_group = parser.add_argument_group('缓存选项 (Cache/Prefetch)')
+    cache_group.add_argument('--intra', action='store_true', default=True,
+                             help='启用intra-expert预取 (同专家gate->up->down预取) (默认: True)')
+    cache_group.add_argument('--no-intra', dest='intra', action='store_false',
+                             help='禁用intra-expert预取')
+    cache_group.add_argument('--inter', action='store_true', default=True,
+                             help='启用inter-expert预取 (跨专家预取) (默认: True)')
+    cache_group.add_argument('--no-inter', dest='inter', action='store_false',
+                             help='禁用inter-expert预取')
+    
+    # 输出选项
+    output_group = parser.add_argument_group('输出选项 (Output)')
+    output_group.add_argument('--csv', type=str,
+                              help='输出CSV文件路径')
+    output_group.add_argument('--viz', type=str,
+                              help='可视化输出图片路径 (如 layout.png)')
+    output_group.add_argument('--max-pages', type=int, default=20,
+                              help='可视化最大页数 (默认: 20)')
+    output_group.add_argument('--no-viz', action='store_true',
+                              help='不显示可视化窗口')
+    output_group.add_argument('--quiet', '-q', action='store_true',
+                              help='静默模式，只输出结果')
+    
+    args = parser.parse_args()
+    
+    # 解析 expert_ids
+    try:
+        expert_ids = parse_expert_ids(args.experts)
+    except ValueError as e:
+        print(f"错误: expert_ids格式无效 '{args.experts}': {e}")
+        return 1
+    
+    # 验证参数
+    if args.channels <= 0 or args.planes <= 0 or args.page_size <= 0:
+        print("错误: channels, planes, page-size 必须大于0")
+        return 1
+    if args.bw <= 0 or args.tr <= 0:
+        print("错误: bw 和 tr 必须大于0")
+        return 1
+    if not expert_ids:
+        print("错误: 至少需要指定一个expert")
+        return 1
+    
+    # 创建几何配置
+    geo = NandGeometry(
+        channels=args.channels,
+        planes_per_channel=args.planes,
+        page_size_bytes=args.page_size
+    )
+    
+    if not args.quiet:
+        print(f"\n{'='*60}")
+        print("NAND Flash MoE Simulator")
+        print(f"{'='*60}")
+        print(f"硬件配置: {args.channels}通道 x {args.planes}平面, 页大小={args.page_size}字节")
+        print(f"性能参数: 带宽={args.bw/1e9:.1f}GB/s, tR={args.tr*1e6:.1f}us")
+        print(f"布局方式: {args.layout}")
+        print(f"缓存选项: intra={'ON' if args.intra else 'OFF'}, inter={'ON' if args.inter else 'OFF'}")
+        print(f"模拟专家: {expert_ids}")
+        print(f"{'='*60}\n")
+    
+    # 选择布局函数
+    if args.layout == 'pl-first':
+        sim = place_experts_page_rr_pl_first(
+            geo, args.num_experts,
+            args.gate_bytes, args.up_bytes, args.down_bytes
+        )
+    else:
+        sim = place_experts_page_rr(
+            geo, args.num_experts,
+            args.gate_bytes, args.up_bytes, args.down_bytes
+        )
+    
+    # 可视化
+    if args.viz:
+        visualize_layout(sim, expert_ids=expert_ids, max_pages=args.max_pages,
+                         title=f"Expert Layout ({args.layout})", save_path=args.viz)
+        if not args.quiet:
+            print(f"[布局图已保存] {args.viz}")
+    elif not args.no_viz:
+        try:
+            visualize_layout(sim, expert_ids=expert_ids, max_pages=args.max_pages,
+                             title=f"Expert Layout ({args.layout})")
+        except Exception as e:
+            if not args.quiet:
+                print(f"[可视化失败: {e}]")
+    
+    # 顺序延迟仿真
+    result = print_sequential_latency_table(
+        sim, expert_ids,
+        bw_total_Bps=args.bw, tR_sec=args.tr,
+        intra_expert_cache=args.intra,
+        inter_expert_cache=args.inter,
+        csv_path=args.csv,
+        quiet=args.quiet
+    )
+    
+    if args.csv and not args.quiet:
+        print(f"\n[CSV已保存] {args.csv}")
+    
+    # 输出有效带宽和简要分析
+    eff_bw = result['effective_bw_Bps']
+    theoretical_bw = args.bw
+    utilization = (eff_bw / theoretical_bw) * 100 if theoretical_bw > 0 else 0
+    
+    if args.quiet:
+        # Quiet模式：只输出关键结果
+        print(f"\n有效带宽: {eff_bw/1e9:.3f} GB/s (利用率: {utilization:.1f}%)")
+    else:
+        print(f"\n有效带宽: {eff_bw/1e9:.3f} GB/s")
+    
+    return 0
+
+
 if __name__ == "__main__":
-    geo = NandGeometry(channels=8, planes_per_channel=8, page_size_bytes=16384)
-    bw, tR = 30e9, 22e-6
-
-    sim = place_experts_page_rr_pl_first(geo, 10, 294912, 294912, 294912)
-    fig, axes = sim.visualize_layout_channel_page_plane(
-        max_pages=10, title="Expert Layout (slice-level)", figsize=(20, 5))
-    plt.show()
-
-    sim = place_experts_page_rr(geo, 10, 294912, 294912, 294912)
-    fig, axes = sim.visualize_layout_channel_page_plane(
-        max_pages=10, title="Expert Layout (slice-level)", figsize=(20, 5))
-    plt.show()
-
-    visualize_layout(sim, expert_ids=[0, 1, 5], max_pages=20,
-                     title="Expert Layout (cell-level)")
-
-    print_multi_expert_latency_table(
-        sim, num_experts=10,
-        bw_total_Bps=bw, tR_sec=tR,
-        intra_expert_cache=True,
-    )
-
-    print_sequential_latency_table(
-        sim, [0, 1, 5],
-        bw_total_Bps=bw, tR_sec=tR,
-        intra_expert_cache=True,
-        inter_expert_cache=True,
-    )
+    import sys
+    sys.exit(main())
