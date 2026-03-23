@@ -776,13 +776,9 @@ def print_sequential_latency_table(
           f"inter={'ON' if inter_expert_cache else 'OFF'}")
     print(f"{'='*W}")
     print(f"\n  [Step Detail]")
-    # 表头 - 使用简单ASCII
-    header = (f"  {'EID':>4} {'PART':>6} | "
-              f"{'tR(us)':>7} {'hid(us)':>8} | "
-              f"{'tX(us)':>8} {'saved(us)':>10} | "
-              f"{'time(us)':>8} | Note")
-    print(header)
-    print(f"  {'-'*90}")
+    # 表头 - 严格对齐
+    print(f"  {'EID':>3} {'PART':>5} | {'tR(us)':>7} {'hid(us)':>7} | {'tX(us)':>7} {'saved(us)':>9} | {'time(us)':>8} | Note")
+    print(f"  {'-'*88}")
 
     steps    = [(eid, part) for eid in expert_ids for part in part_order]
     prev_eid = None
@@ -803,27 +799,26 @@ def print_sequential_latency_table(
         
         notes_str = ' '.join(notes_parts) if notes_parts else "-"
 
-        # 格式化数据行 - 0值显示为 "  -  "
+        # 格式化数据行 - 严格对齐，0值显示为 "-"
         tr_val = st['tr_sec']*1e6
         hid_val = st['hid_sec']*1e6
         tx_val = st['crit_tx_sec']*1e6
         saved_val = st['saved_sec']*1e6
+        time_val = st['time_sec']*1e6
         
-        tr_str = f"{tr_val:>7.2f}" if tr_val > 0 else "     -  "
-        hid_str = f"{hid_val:>8.2f}" if hid_val > 0 else "      -  "
-        tx_str = f"{tx_val:>8.2f}" if tx_val > 0 else "      -  "
-        saved_str = f"{saved_val:>10.2f}" if saved_val > 0 else "        -  "
-        time_str = f"{st['time_sec']*1e6:>8.2f}"
+        # 使用统一的格式化，0值用 "-" 占位但保持宽度
+        tr_str = f"{tr_val:>7.2f}" if tr_val > 0.001 else "      -"
+        hid_str = f"{hid_val:>7.2f}" if hid_val > 0.001 else "      -"
+        tx_str = f"{tx_val:>7.2f}" if tx_val > 0.001 else "      -"
+        saved_str = f"{saved_val:>9.2f}" if saved_val > 0.001 else "        -"
+        time_str = f"{time_val:>8.2f}"
         
         # 每3行（每个expert的第一行）用空行分隔
         is_first_step = (i % len(part_order) == 0)
         if is_first_step and i > 0:
             print()
         
-        print(f"  {eid:>4} {part:>6} | "
-              f"{tr_str} {hid_str} | "
-              f"{tx_str} {saved_str} | "
-              f"{time_str} | {notes_str}")
+        print(f"  {eid:>3} {part:>5} | {tr_str} {hid_str} | {tx_str} {saved_str} | {time_str} | {notes_str}")
 
         rows_csv.append([eid, part,
                          f"{st['tr_sec']*1e6:.2f}", f"{st['hid_sec']*1e6:.2f}",   # ↓ 新增 hid
