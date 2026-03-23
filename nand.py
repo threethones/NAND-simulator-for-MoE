@@ -491,7 +491,8 @@ def estimate_expert_latency(
     if part_order is None:
         part_order = ["gate", "up", "down"]
 
-    tX_sec = sim.geo.page_size_bytes / (bw_total_Bps / sim.geo.channels)
+    # bw_total_Bps 现在是单通道带宽，需要乘以通道数得到总带宽
+    tX_sec = sim.geo.page_size_bytes / bw_total_Bps
     cache_pages:   Set[SliceKey] = set()
     parts_out:     Dict[str, dict] = {}
     global_row_tx: Dict[int, float] = defaultdict(float)
@@ -828,14 +829,14 @@ def print_sequential_latency_table(
     total_saved_tx = sum(r['step_stats'][k]['saved_tx_sec'] for k in r['step_stats'])
     total_saved_tr = sum(r['step_stats'][k]['saved_tr_sec'] for k in r['step_stats'])
     
-    # 理论峰值带宽（假设只有TX，无tR）
-    theoretical_bw = bw_total_Bps
+    # 理论峰值带宽（单通道带宽 × 通道数）
+    total_bw = bw_total_Bps * sim.geo.channels
     
     # 实际有效带宽
     effective_bw = r['effective_bw_Bps']
     
-    # 带宽利用率
-    bw_utilization = (effective_bw / theoretical_bw) * 100 if theoretical_bw > 0 else 0
+    # 带宽利用率（基于总带宽）
+    bw_utilization = (effective_bw / total_bw) * 100 if total_bw > 0 else 0
     
     # 如果没有tR延迟时的带宽（理想情况）
     ideal_time_if_no_tr = pure_tx_time
@@ -854,7 +855,8 @@ def print_sequential_latency_table(
     
     print(f"\n  [Bandwidth Analysis]")
     print(f"  {'='*50}")
-    print(f"  {'Theoretical BW':>20} : {theoretical_bw/1e9:>8.3f} GB/s (额定带宽)")
+    print(f"  {'Per-CH BW':>20} : {bw_total_Bps/1e9:>8.3f} GB/s (单通道)")
+    print(f"  {'Total BW':>20} : {total_bw/1e9:>8.3f} GB/s ({sim.geo.channels}CH合计)")
     print(f"  {'Effective BW':>20} : {effective_bw/1e9:>8.3f} GB/s (实际带宽)")
     print(f"  {'Utilization':>20} : {bw_utilization:>8.2f} %")
     print(f"  {'-'*50}")
@@ -942,8 +944,8 @@ def main():
     
     # 性能参数
     perf_group = parser.add_argument_group('性能参数 (Performance)')
-    perf_group.add_argument('--bw', type=float, default=30e9,
-                            help='总带宽 (字节/秒，默认: 30e9 = 30GB/s)')
+    perf_group.add_argument('--bw', type=float, default=3.75e9,
+                            help='单通道带宽 (字节/秒，默认: 3.75e9 = 3.75GB/s)')
     perf_group.add_argument('--tr', type=float, default=22e-6,
                             help='读延迟tR (秒，默认: 22e-6 = 22us)')
     
@@ -1083,8 +1085,8 @@ def main():
     
     # 输出有效带宽和简要分析
     eff_bw = result['effective_bw_Bps']
-    theoretical_bw = args.bw
-    utilization = (eff_bw / theoretical_bw) * 100 if theoretical_bw > 0 else 0
+    total_bw = args.bw * args.channels  # 单通道带宽 × 通道数
+    utilization = (eff_bw / total_bw) * 100 if total_bw > 0 else 0
     
     if args.quiet:
         # Quiet模式：只输出关键结果

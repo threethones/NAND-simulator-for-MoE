@@ -76,9 +76,9 @@ class NandSimulatorGUI:
         perf_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         perf_frame.columnconfigure(1, weight=1)
         
-        # Bandwidth
-        ttk.Label(perf_frame, text="带宽 (GB/s):").grid(row=0, column=0, sticky=tk.W, padx=5)
-        self.bw_var = tk.DoubleVar(value=30.0)
+        # Bandwidth (单通道)
+        ttk.Label(perf_frame, text="单通道带宽 (GB/s):").grid(row=0, column=0, sticky=tk.W, padx=5)
+        self.bw_var = tk.DoubleVar(value=3.75)
         ttk.Entry(perf_frame, textvariable=self.bw_var, width=12).grid(row=0, column=1, sticky=tk.W, padx=5)
         
         # tR
@@ -212,9 +212,9 @@ class NandSimulatorGUI:
     def load_preset(self):
         """加载预设配置"""
         presets = {
-            "消费级 SSD": {"channels": 4, "planes": 4, "bw": 7, "tr": 50},
-            "企业级 SSD": {"channels": 8, "planes": 8, "bw": 14, "tr": 22},
-            "高性能 SSD": {"channels": 16, "planes": 8, "bw": 30, "tr": 20},
+            "消费级 SSD": {"channels": 4, "planes": 4, "bw": 1.75, "tr": 50},
+            "企业级 SSD": {"channels": 8, "planes": 8, "bw": 1.75, "tr": 22},
+            "高性能 SSD": {"channels": 16, "planes": 8, "bw": 1.875, "tr": 20},
         }
         
         preset_window = tk.Toplevel(self.root)
@@ -307,8 +307,9 @@ class NandSimulatorGUI:
                 print(f"\n{'='*60}")
                 print("NAND Flash MoE Simulator")
                 print(f"{'='*60}")
+                total_bw = bw * channels
                 print(f"硬件配置: {channels}通道 x {planes}平面, 页大小={page_size}字节")
-                print(f"性能参数: 带宽={bw/1e9:.1f}GB/s, tR={tr*1e6:.1f}us")
+                print(f"性能参数: 单通道={bw/1e9:.2f}GB/s, 总带宽={total_bw/1e9:.1f}GB/s, tR={tr*1e6:.1f}us")
                 print(f"布局方式: {layout}")
                 print(f"缓存选项: intra={'ON' if intra else 'OFF'}, inter={'ON' if inter else 'OFF'}")
                 print(f"模拟专家: {expert_ids}")
