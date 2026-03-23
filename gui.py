@@ -382,7 +382,8 @@ class NandSimulatorGUI:
                 
                 # 输出有效带宽
                 eff_bw = result['effective_bw_Bps']
-                utilization = (eff_bw / bw) * 100 if bw > 0 else 0
+                total_bw = bw * channels  # 总带宽 = 单通道 × 通道数
+                utilization = (eff_bw / total_bw) * 100 if total_bw > 0 else 0
                 print(f"\n{'='*60}")
                 print(f"有效带宽: {eff_bw/1e9:.3f} GB/s (利用率: {utilization:.1f}%)")
                 print(f"{'='*60}\n")
