@@ -71,6 +71,9 @@ class NandSimulatorGUI:
         page_sizes = [4096, 8192, 16384, 32768]
         ttk.Combobox(hw_frame, textvariable=self.page_size_var, values=page_sizes, width=10).grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
         
+        # 加载预设按钮
+        ttk.Button(hw_frame, text="加载预设", command=self.load_preset, width=12).grid(row=1, column=2, padx=5, pady=5)
+        
         # ========== 性能参数 ==========
         perf_frame = ttk.LabelFrame(main_frame, text="性能参数 (Performance)", padding="5")
         perf_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
@@ -163,8 +166,6 @@ class NandSimulatorGUI:
         ttk.Button(button_frame, text="运行仿真", command=self.run_simulation, 
                   width=20).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="清除输出", command=self.clear_output, 
-                  width=15).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="加载预设", command=self.load_preset, 
                   width=15).pack(side=tk.LEFT, padx=5)
         
         # ========== 结果显示区 ==========
