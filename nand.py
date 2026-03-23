@@ -889,38 +889,6 @@ def print_sequential_latency_table(
             print(f"     {'- Page utilization':>22} : {avg_page_util:>8.1f}% (avg)")
             print(f"     {'- Wasted per page':>22} : {page_granularity_loss:>8.1f}% internal fragmentation")
     
-    # 4. 关键路径瓶颈分析
-    # 找出最关键的channel
-    max_planes_per_step = []
-    for k, st in r['step_stats'].items():
-        dist = st.get('_dist_row_ch', {})
-        if dist:
-            for pg, ch_dict in dist.items():
-                max_planes_per_step.append(max(ch_dict.values()))
-    if max_planes_per_step:
-        avg_planes = sum(max_planes_per_step) / len(max_planes_per_step)
-        max_possible_planes = sim.geo.planes_per_channel
-        ch_parallel_util = (avg_planes / max_possible_planes) * 100
-        print(f"\n  4. Channel Parallelism")
-        print(f"     {'- Avg planes/CH':>22} : {avg_planes:>8.1f} / {max_possible_planes}")
-        print(f"     {'- Parallel util':>22} : {ch_parallel_util:>8.1f}% (per-page)")
-    
-    print(f"\n  [Recommendations]")
-    print(f"  {'='*50}")
-    if bw_utilization < 50:
-        print(f"  [!] 带宽利用率较低 ({bw_utilization:.1f}%)，建议：")
-        if effective_tr_time > pure_tx_time * 0.5:
-            print(f"     - tR延迟占比较高，考虑增大page_size或增加预取")
-        if intra_expert_cache and total_saved_tx < pure_tx_time * 0.1:
-            print(f"     - intra预取效果有限，确认布局是否为pl-first")
-    else:
-        print(f"  [OK] 带宽利用率良好 ({bw_utilization:.1f}%)")
-    
-    if not intra_expert_cache and not inter_expert_cache:
-        print(f"  [TIP] 建议启用--intra和--inter预取以提升性能")
-    elif not inter_expert_cache and len(expert_ids) > 1:
-        print(f"  [TIP] 建议启用--inter预取以提升多专家场景性能")
-    
     print(f"{'='*W}\n")
 
     if csv_path:
