@@ -217,9 +217,8 @@ class NandSimulatorGUI:
     def load_preset(self):
         """加载预设配置"""
         presets = {
-            "消费级 SSD": {"channels": 4, "planes": 4, "bw": 1.75, "tr": 50},
-            "企业级 SSD": {"channels": 8, "planes": 8, "bw": 1.75, "tr": 22},
-            "高性能 SSD": {"channels": 16, "planes": 8, "bw": 1.875, "tr": 20},
+            "低配 NAND": {"channels": 4, "planes": 4, "bw": 1.75, "tr": 50},
+            "高配 NAND": {"channels": 8, "planes": 8, "bw": 3.75, "tr": 22},
         }
         
         preset_window = tk.Toplevel(self.root)
