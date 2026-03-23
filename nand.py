@@ -358,6 +358,7 @@ def visualize_layout(
     max_pages: int = None,
     figsize: Tuple[float, float] = None,
     save_path: str = None,
+    block: bool = True,
 ) -> None:
     if part_order is None:
         part_order = ["gate", "up", "down"]
@@ -438,7 +439,7 @@ def visualize_layout(
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
         print(f"[Layout saved] {save_path}")
     else:
-        plt.show()
+        plt.show(block=block)
     plt.close(fig)
 
 

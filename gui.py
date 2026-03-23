@@ -152,6 +152,10 @@ class NandSimulatorGUI:
         self.viz_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
         ttk.Button(output_frame, text="浏览...", command=self.browse_viz).grid(row=1, column=2, padx=5, pady=5)
         
+        # 显示布局图选项
+        self.show_viz_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(output_frame, text="运行后显示布局图", variable=self.show_viz_var).grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        
         # ========== 运行按钮 ==========
         button_frame = ttk.Frame(main_frame)
         button_frame.grid(row=5, column=0, columnspan=2, pady=10)
@@ -273,6 +277,7 @@ class NandSimulatorGUI:
             inter = self.inter_var.get()
             csv_path = self.csv_var.get() if self.csv_var.get() else None
             viz_path = self.viz_var.get() if self.viz_var.get() else None
+            show_viz = self.show_viz_var.get()
             
             # 解析 expert_ids
             try:
@@ -333,6 +338,21 @@ class NandSimulatorGUI:
                         print(f"\n[布局图已保存] {viz_path}")
                     except Exception as e:
                         print(f"\n[可视化失败: {e}]")
+                
+                # 显示布局图（如果用户选择）
+                if show_viz:
+                    try:
+                        # 在新线程中显示，避免阻塞 GUI
+                        import threading
+                        def show_layout():
+                            visualize_layout(sim, expert_ids=expert_ids, max_pages=20,
+                                           title=f"Expert Layout ({layout})", block=True)
+                        viz_thread = threading.Thread(target=show_layout)
+                        viz_thread.daemon = True
+                        viz_thread.start()
+                        print(f"\n[正在显示布局图...]")
+                    except Exception as e:
+                        print(f"\n[显示布局图失败: {e}]")
                 
                 # 顺序延迟仿真
                 result = print_sequential_latency_table(
