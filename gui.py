@@ -121,9 +121,9 @@ class NandSimulatorGUI:
         layout_frame.grid(row=3, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5, padx=(0, 5))
         
         self.layout_var = tk.StringVar(value="pl-first")
-        ttk.Radiobutton(layout_frame, text="PL-first (预取优化)", variable=self.layout_var, 
+        ttk.Radiobutton(layout_frame, text="PL-first (默认SLC)", variable=self.layout_var,
                        value="pl-first").grid(row=0, column=0, sticky=tk.W, padx=5)
-        ttk.Radiobutton(layout_frame, text="CH-first (基线)", variable=self.layout_var, 
+        ttk.Radiobutton(layout_frame, text="CH-first (跳跃SLC)", variable=self.layout_var,
                        value="ch-first").grid(row=1, column=0, sticky=tk.W, padx=5)
         
         # ========== 缓存选项 ==========
