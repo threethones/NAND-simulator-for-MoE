@@ -821,19 +821,13 @@ def print_sequential_latency_table(
         print(f"  {eid:>3} {part:>5} | {tr_str} {hid_str} | {tx_str} {saved_str} | {time_str} | {notes_str}")
 
         rows_csv.append([eid, part,
-                         f"{st['tr_sec']*1e6:.2f}", f"{st['hid_sec']*1e6:.2f}",   # ↓ 新增 hid
+                         f"{st['tr_sec']*1e6:.2f}", f"{st['hid_sec']*1e6:.2f}",
                          f"{st['crit_tx_sec']*1e6:.2f}",
                          st['cached_planes'], f"{st['saved_sec']*1e6:.2f}",
                          f"{st['time_sec']*1e6:.2f}"])
         prev_eid = eid
 
-    print(f"\n  [Per-Expert Summary]")
-    print(f"  {'EID':>4}  {'tR(us)':>8} {'tX(us)':>9} {'c_pl':>6} {'saved(us)':>10} {'bytes':>12}")
-    print(f"  {'-'*60}")
-    for eid in expert_ids:
-        s = r["per_expert_summary"][eid]
-        print(f"  {eid:>4}  {s['tr_sec']*1e6:>8.2f} {s['crit_tx_sec']*1e6:>9.2f} "
-              f"{s['cached_planes']:>6} {s['saved_sec']*1e6:>10.2f} {s['bytes']:>12,}")
+    # 计算带宽分析数据
 
     # ========== 带宽分析 ==========
     # 计算各项时间
@@ -862,14 +856,6 @@ def print_sequential_latency_table(
     
     # 计算各类开销导致的带宽损失
     tr_overhead_time = effective_tr_time  # tR造成的额外时间
-    
-    print(f"\n  [Global Summary]")
-    print(f"  {'N_rows':>14} : {r['N_rows']}")
-    print(f"  {'tR_total':>14} : {r['tr_total_sec']*1e6:.2f} us")
-    print(f"  {'tX_total':>14} : {r['tx_total_sec']*1e6:.2f} us")
-    print(f"  {'hid_total':>14} : {r['hid_total_sec']*1e6:.2f} us")
-    print(f"  {'TOTAL':>14} : {r['total_time_sec']*1e6:.2f} us")
-    print(f"  {'total_bytes':>14} : {r['total_bytes']:,} bytes")
     
     # 单通道有效带宽
     per_ch_effective_bw = effective_bw / sim.geo.channels
