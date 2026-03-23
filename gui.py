@@ -29,13 +29,8 @@ try:
 except ImportError:
     pass
 
-# 尝试导入 TopK 分析模块
-topk_available = False
-try:
-    from layout_analyse import run_topk_analysis, plot_prefetch_comparison
-    topk_available = True
-except ImportError:
-    pass
+# 导入 TopK 分析模块
+from layout_analyse import run_topk_analysis, plot_prefetch_comparison
 
 
 class RedirectText(io.StringIO):
@@ -59,25 +54,7 @@ class NandSimulatorGUI:
         self.root.geometry("1200x900")
         self.root.minsize(1000, 700)
         
-        # 预设配置
-        self.presets = {
-            "低配NAND": {
-                "channels": 4,
-                "planes": 4,
-                "page_size": 16,
-                "bw": 1.75,
-                "tr": 50,
-            },
-            "高配NAND": {
-                "channels": 8,
-                "planes": 8,
-                "page_size": 16,
-                "bw": 3.75,
-                "tr": 22,
-            },
-        }
-        
-        # 颜色定义
+        # 界面颜色配置
         self.colors = {
             'bg': '#f5f5f5',
             'frame': '#ffffff',
@@ -103,10 +80,7 @@ class NandSimulatorGUI:
         
         # 初始化两个标签页
         self._init_sim_tab()
-        if topk_available:
-            self._init_topk_tab()
-        else:
-            self._init_topk_unavailable()
+        self._init_topk_tab()
     
     def _init_sim_tab(self):
         """初始化主模拟标签页"""
@@ -122,12 +96,6 @@ class NandSimulatorGUI:
         hw_frame = tk.LabelFrame(left_panel, text="\u786c\u4ef6\u914d\u7f6e\u53c2\u6570", 
                                   bg=self.colors['frame'], padx=10, pady=10)
         hw_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
-        
-        # 预设按钮放在最上面
-        tk.Button(hw_frame, text="\u52a0\u8f7d\u9884\u8bbe\u914d\u7f6e", 
-                  command=self._show_preset_menu,
-                  bg=self.colors['accent'], fg='white',
-                  font=('Microsoft YaHei', 9)).pack(fill=tk.X, pady=(0, 10))
         
         # 通道数
         tk.Label(hw_frame, text="\u901a\u9053\u6570 (Channels):", 
@@ -283,12 +251,6 @@ class NandSimulatorGUI:
                                          bg=self.colors['frame'], padx=10, pady=10)
         hw_config_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
         
-        # 加载预设按钮
-        tk.Button(hw_config_frame, text="\u52a0\u8f7d\u9884\u8bbe\u914d\u7f6e", 
-                  command=self._show_preset_menu,
-                  bg=self.colors['accent'], fg='white',
-                  font=('Microsoft YaHei', 9)).pack(fill=tk.X, pady=(0, 10))
-        
         # Channels
         tk.Label(hw_config_frame, text="\u901a\u9053\u6570 (Channels):", 
                  bg=self.colors['frame']).pack(anchor=tk.W)
@@ -411,39 +373,6 @@ class NandSimulatorGUI:
             width=120, height=40
         )
         self.topk_output_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-    
-    def _init_topk_unavailable(self):
-        """当 TopK 模块不可用时显示"""
-        frame = tk.Frame(self.topk_frame, bg=self.colors['bg'])
-        frame.pack(fill=tk.BOTH, expand=True)
-        
-        tk.Label(frame, 
-                 text="layout_analyse.py \u672a\u627e\u5230\n\n\u8bf7\u786e\u4fdd layout_analyse.py \u5728\u5f53\u524d\u76ee\u5f55",
-                 bg=self.colors['bg'], fg='red',
-                 font=('Microsoft YaHei', 14)).pack(expand=True)
-    
-    def _show_preset_menu(self):
-        """显示预设菜单"""
-        menu = tk.Menu(self.root, tearoff=0)
-        for name in self.presets:
-            menu.add_command(label=name, command=lambda n=name: self._load_preset(n))
-        menu.post(self.root.winfo_pointerx(), self.root.winfo_pointery())
-    
-    def _load_preset(self, preset_name):
-        """加载预设配置"""
-        preset = self.presets[preset_name]
-        self.channels_var.set(preset['channels'])
-        self.planes_var.set(preset['planes'])
-        self.page_size_var.set(preset['page_size'])
-        self.bw_var.set(preset['bw'])
-        self.tr_var.set(preset['tr'])
-        
-        # 更新输出
-        self.output_text.insert(tk.END, f"\n[\u9884\u8bbe] \u5df2\u52a0\u8f7d: {preset_name}\n")
-        self.output_text.insert(tk.END, f"  Channels: {preset['channels']}, Planes: {preset['planes']}\n")
-        self.output_text.insert(tk.END, f"  Page Size: {preset['page_size']} KB\n")
-        self.output_text.insert(tk.END, f"  BW: {preset['bw']} GB/s, tR: {preset['tr']} us\n")
-        self.output_text.see(tk.END)
     
     def _create_geometry(self):
         """创建 NAND 几何结构"""

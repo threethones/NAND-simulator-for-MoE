@@ -1,11 +1,9 @@
 # ================================================================== #
-#  topk_analysis.py  —— MoE NAND TopK 分析框架                        #
-#  修改日期：2026-03-18                                                #
+#  layout_analyse.py  —— MoE NAND TopK 分析框架                       #
 #                                                                      #
-#  新增特性：                                                           #
-#  5. 三种访问模式 × 四种预取组合对比                                   #
-#     prefetch_modes: none / intra_only / inter_only / full            #
-#     print_prefetch_comparison() 打印汇总对比表                        #
+#  核心功能：                                                           #
+#  1. 三种访问模式 × 四种预取组合的 Monte Carlo 模拟                   #
+#  2. 预取对比表格生成与可视化                                          #
 # ================================================================== #
 
 from __future__ import annotations
@@ -170,59 +168,6 @@ def _build_per_exp_breakdown(
 # ================================================================== #
 #  Monte Carlo 采样：三种访问模式 × 四种预取组合                        #
 # ================================================================== #
-
-def run_monte_carlo(
-    sim: NandSimulator,
-    num_experts: int,
-    bw_total_Bps: float,
-    tR_sec: float,
-    topk: int = 10,
-    n_trials: int = 200,
-    local_window_factor: int = 2,
-    intra_expert_cache: bool = True,
-    inter_expert_cache: bool = True,
-    seed: int = 42,
-) -> Dict[str, List[dict]]:
-    """
-    原有接口不变：返回 mc[mode] = List[dict]，
-    使用 intra_expert_cache / inter_expert_cache 参数控制预取。
-    """
-    rng = random.Random(seed)
-
-    def gen_sequential():
-        start = rng.randint(0, num_experts - topk)
-        return list(range(start, start + topk))
-
-    def gen_local():
-        window = topk * local_window_factor
-        start  = rng.randint(0, num_experts - window)
-        pool   = list(range(start, start + window))
-        return sorted(rng.sample(pool, topk))
-
-    def gen_random():
-        return sorted(rng.sample(range(num_experts), topk))
-
-    generators = {
-        "sequential": gen_sequential,
-        "local":      gen_local,
-        "random":     gen_random,
-    }
-
-    all_results: Dict[str, List[dict]] = {name: [] for name in generators}
-
-    for name, gen in generators.items():
-        for _ in range(n_trials):
-            eids = gen()
-            r = simulate_topk_batch(
-                sim, eids, bw_total_Bps, tR_sec,
-                intra_expert_cache=intra_expert_cache,
-                inter_expert_cache=inter_expert_cache,
-            )
-            r["expert_ids"] = eids
-            all_results[name].append(r)
-
-    return all_results
-
 
 def run_monte_carlo_prefetch_compare(
     sim: NandSimulator,
@@ -407,16 +352,8 @@ def format_prefetch_comparison(
     return "\n".join(lines)
 
 
-def print_prefetch_comparison(
-    compare_results: Dict[str, Dict[str, List[dict]]],
-    bw_total_Bps: float,
-) -> None:
-    """打印三种访问模式 × 四种预取组合的汇总对比表。"""
-    print(format_prefetch_comparison(compare_results, bw_total_Bps, channels=8))
-
-
 # ================================================================== #
-#  带宽打不满原因分析                                                   #
+#  带宽分析                                                             #
 # ================================================================== #
 
 def format_bw_analysis(
@@ -456,19 +393,8 @@ def format_bw_analysis(
     return "\n".join(lines)
 
 
-def print_bw_analysis(
-    mc_results: Dict[str, List[dict]],
-    bw_total_Bps: float,
-    tR_sec: float,
-    page_size_bytes: int,
-    channels: int,
-) -> None:
-    """打印带宽分析。"""
-    print(format_bw_analysis(mc_results, bw_total_Bps, tR_sec, page_size_bytes, channels))
-
-
 # ================================================================== #
-#  预取对比可视化                                                       #
+#  可视化                                                               #
 # ================================================================== #
 
 def plot_prefetch_comparison(
@@ -754,106 +680,4 @@ def run_topk_analysis(
     return comparison_text, bw_analysis_text, compare
 
 
-# ================================================================== #
-#  入口示例                                                            #
-# ================================================================== #
-
-if __name__ == "__main__":
-    from nand import NandGeometry, place_experts_page_rr
-
-    # ── 参数 ─────────────────────────────────────────────────────────
-    geo          = NandGeometry(channels=8, planes_per_channel=8, page_size_bytes=16384)
-    NUM_EXPERTS  = 512
-    GATE_BYTES   = 294912
-    UP_BYTES     = 294912
-    DOWN_BYTES   = 294912
-    BW_TOTAL_BPS = 30 * 1024 ** 3
-    TR_SEC       = 22e-6
-    TOPK         = 10
-    N_TRIALS     = 300
-
-    # ── 建立布局 ─────────────────────────────────────────────────────
-    sim = place_experts_page_rr(
-        geo, NUM_EXPERTS, GATE_BYTES, UP_BYTES, DOWN_BYTES
-    )
-
-    # ── 原有 Monte Carlo（full 预取）────────────────────────────────
-    mc = run_monte_carlo(
-        sim,
-        num_experts=NUM_EXPERTS,
-        bw_total_Bps=BW_TOTAL_BPS,
-        tR_sec=TR_SEC,
-        topk=TOPK,
-        n_trials=N_TRIALS,
-        intra_expert_cache=True,
-        inter_expert_cache=True,
-        seed=42,
-    )
-
-    # ── 常规打印 ─────────────────────────────────────────────────────
-    for mode, results in mc.items():
-        s = summarize(results)
-        print(f"\n{'=' * 60}")
-        print(f"Mode : {mode}")
-        print(f"  total  mean : {s['total_time_us']['mean']:8.1f} us"
-              f"  p50 : {s['total_time_us']['p50']:8.1f} us"
-              f"  p95 : {s['total_time_us']['p95']:8.1f} us")
-        print(f"  eff_bw mean : {s['eff_bw_GBps']['mean']:8.3f} GB/s"
-              f"  p50 : {s['eff_bw_GBps']['p50']:8.3f} GB/s"
-              f"  p95 : {s['eff_bw_GBps']['p95']:8.3f} GB/s"
-              f"  (peak={BW_TOTAL_BPS/1e9:.0f} GB/s)")
-        print(f"  tR   mean   : {s['tr_total_us']['mean']:8.1f} us"
-              f"  (tR暴露 {s['tr_exposed_us']['mean']:.1f} us,"
-              f" 掩盖率 {s['hid_ratio']['mean']*100:.1f}%)")
-        print(f"  TX   mean   : {s['tx_total_us']['mean']:8.1f} us")
-        print(f"  tR掩盖 mean : {s['hid_total_us']['mean']:8.1f} us")
-        print(f"  ── 专家内节省（tR+TX 捆绑节省）────────────────")
-        print(f"    总计 : {s['intra_saved_us']['mean']:7.2f}"
-              f" ± {s['intra_saved_us']['std']:.2f} us")
-        print(f"      tR : {s['intra_saved_tr_us']['mean']:7.2f}"
-              f" ± {s['intra_saved_tr_us']['std']:.2f} us  （被跳过step的tR部分）")
-        print(f"      TX : {s['intra_saved_tx_us']['mean']:7.2f}"
-              f" ± {s['intra_saved_tx_us']['std']:.2f} us  （被跳过step的TX部分）")
-        print(f"  ── 专家间节省（tR+TX 捆绑节省）────────────────")
-        print(f"    总计 : {s['inter_saved_us']['mean']:7.2f}"
-              f" ± {s['inter_saved_us']['std']:.2f} us")
-        print(f"      tR : {s['inter_saved_tr_us']['mean']:7.2f}"
-              f" ± {s['inter_saved_tr_us']['std']:.2f} us  （被跳过step的tR部分）")
-        print(f"      TX : {s['inter_saved_tx_us']['mean']:7.2f}"
-              f" ± {s['inter_saved_tx_us']['std']:.2f} us  （被跳过step的TX部分）")
-        print(f"  ── 完全预取节省 ───────────────────────────────")
-        print(f"    总计 : {s['full_saved_us']['mean']:7.2f} us")
-
-    # ── 带宽打不满原因分析 ───────────────────────────────────────────
-    print_bw_analysis(
-        mc,
-        bw_total_Bps=BW_TOTAL_BPS,
-        tR_sec=TR_SEC,
-        page_size_bytes=geo.page_size_bytes,
-        channels=geo.channels,
-    )
-
-    # ── 新增：预取对比（3 访问模式 × 4 预取组合）───────────────────
-    print(f"\n\n{'#' * 60}")
-    print(f"#  预取模式对比分析")
-    print(f"{'#' * 60}")
-
-    compare = run_monte_carlo_prefetch_compare(
-        sim,
-        num_experts=NUM_EXPERTS,
-        bw_total_Bps=BW_TOTAL_BPS,
-        tR_sec=TR_SEC,
-        topk=TOPK,
-        n_trials=N_TRIALS,
-        seed=42,
-    )
-
-    print_prefetch_comparison(compare, bw_total_Bps=BW_TOTAL_BPS)
-
-    # ── 新增：预取对比可视化 ─────────────────────────────────────────
-    plot_prefetch_comparison(
-        compare,
-        bw_total_Bps=BW_TOTAL_BPS,
-        channels=geo.channels,
-        save_path="prefetch_compare.png",  # None 则不保存
-    )
+# 此模块通过 GUI 调用，无命令行入口

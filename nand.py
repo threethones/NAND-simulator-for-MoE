@@ -266,87 +266,8 @@ class NandSimulator:
             cached_planes=0, saved_sec=0.0, _dist_row_ch=dist_row_ch,
         )
 
-    # -------------------------------------------------------------- #
-    #  可视化1：精确 slice 级别                                        #
-    # -------------------------------------------------------------- #
-    def visualize_layout_channel_page_plane(
-        self,
-        max_pages=None,
-        show_grid=True,
-        title=None,
-        figsize=(18, 7),
-        annotate_expert_id=True,
-        annotate_min_width_frac=0.06,
-        annotate_fontsize=7,
-    ):
-        C = self.geo.channels
-        P = self.geo.planes_per_channel
-        S = self.geo.page_size_bytes
-
-        max_page_seen = max((sl.page for sl in self._all_slices), default=0)
-        need_pages = max_page_seen + 1
-        if max_pages is None:
-            max_pages = need_pages
-        else:
-            max_pages = max(1, min(max_pages, need_pages))
-
-        part_colors = {
-            "gate": mpl.colors.to_rgba("#1f77b4"),
-            "up":   mpl.colors.to_rgba("#ff7f0e"),
-            "down": mpl.colors.to_rgba("#2ca02c"),
-        }
-
-        fig, axes = plt.subplots(1, C, figsize=figsize, sharey=True, squeeze=False)
-        axes = axes[0]
-
-        for ch in range(C):
-            ax = axes[ch]
-            ax.set_facecolor("white")
-
-            for sl in self._all_slices:
-                if sl.ch != ch or sl.page >= max_pages:
-                    continue
-                x = sl.pl + (sl.offset / S)
-                w = sl.length / S
-                rect = Rectangle(
-                    (x, sl.page + 0.1), w, 0.8,
-                    facecolor=part_colors.get(sl.part, (0.5, 0.5, 0.5, 1.0)),
-                    edgecolor="black", linewidth=0.25, alpha=0.85,
-                )
-                ax.add_patch(rect)
-                if annotate_expert_id and w >= annotate_min_width_frac:
-                    ax.text(
-                        x + w / 2, sl.page + 0.5, str(sl.expert_id),
-                        ha="center", va="center",
-                        fontsize=annotate_fontsize, color="black", clip_on=True,
-                    )
-
-            ax.set_title(f"CH{ch}", fontsize=11)
-            ax.set_xlim(0, P)
-            ax.set_ylim(0, max_pages)
-            ax.set_xticks([i + 0.5 for i in range(P)])
-            ax.set_xticklabels([f"PL{i}" for i in range(P)], fontsize=9)
-            ax.set_xlabel("Plane(col)+fraction", fontsize=9)
-
-            if show_grid:
-                for xline in range(P + 1):
-                    ax.axvline(xline, color="gray", linewidth=0.4, alpha=0.35)
-                for yline in range(max_pages + 1):
-                    ax.axhline(yline, color="gray", linewidth=0.4, alpha=0.25)
-
-        axes[0].set_ylabel("Page(row)", fontsize=10)
-        fig.suptitle(title or "Layout", fontsize=12)
-        handles = [
-            mpl.patches.Patch(color=part_colors[p], label=p)
-            for p in ("gate", "up", "down")
-        ]
-        fig.legend(handles=handles, loc="upper right", framealpha=0.9)
-        plt.tight_layout()
-        return fig, axes
-
-
 # ================================================================== #
-#  可视化2：整格级别                                                   #
+#  可视化                                                               #
 # ================================================================== #
 
 def visualize_layout(
@@ -673,69 +594,7 @@ def estimate_sequential_latency(
 
 
 # ================================================================== #
-#  打印表格：多 Expert 独立延迟                                        #
-# ================================================================== #
-
-def print_multi_expert_latency_table(
-    sim: NandSimulator,
-    *,
-    num_experts: int,
-    bw_total_Bps: float,
-    tR_sec: float,
-    part_order: List[str] = None,
-    intra_expert_cache: bool = True,
-    csv_path: Optional[str] = None,
-):
-    if part_order is None:
-        part_order = ["gate", "up", "down"]
-
-    results = [
-        estimate_expert_latency(sim, eid,
-            bw_total_Bps=bw_total_Bps, tR_sec=tR_sec,
-            part_order=part_order, intra_expert_cache=intra_expert_cache)
-        for eid in range(num_experts)
-    ]
-
-    tX_us = results[0]["tX_sec"] * 1e6
-    tR_us = tR_sec * 1e6
-    W = 160
-
-    col_header = "  ".join(
-        f"{'crit_ch':>7} {'tR(us)':>7} {'tX(us)':>8} {'c_pl':>5} {'saved(us)':>9} {'time(us)':>8}"
-        for _ in part_order
-    )
-    print(f"\n{'='*W}")
-    print(f"  Multi-Expert Latency  |  tR={tR_us:.1f}us  tX={tX_us:.4f}us  "
-          f"intra_cache={'ON' if intra_expert_cache else 'OFF'}")
-    print(f"{'='*W}")
-    print(f"  {'EID':>3}  {col_header}  |"
-          f"  {'tR_tot':>8} {'tX_tot':>8} {'hid':>8} {'TOTAL':>9} {'BW(GB/s)':>9}")
-    print(f"{'-'*W}")
-
-    rows_csv = []
-    for r in results:
-        eid = r["expert_id"]
-        cells = []
-        for part in part_order:
-            st = r["parts"][part]
-            cells.append(
-                f"  {str(st['crit_ch']):>7} {st['tr_sec']*1e6:>7.2f} {st['crit_tx_sec']*1e6:>8.2f} "
-                f"{st['cached_planes']:>5} {st['saved_sec']*1e6:>9.2f} {st['time_sec']*1e6:>8.2f}"
-            )
-        print(f"  {eid:>3}  {'  '.join(cells)}  |"
-              f"  {r['tr_total_sec']*1e6:>8.2f}  {r['tx_total_sec']*1e6:>8.2f}"
-              f"  {r['hid_total_sec']*1e6:>8.2f}  {r['total_time_sec']*1e6:>9.2f}"
-              f"  {r['effective_bw_Bps']/1e9:>9.3f}")
-        rows_csv.append([eid, r["total_time_sec"] * 1e6, r["effective_bw_Bps"] / 1e9])
-
-    print(f"{'='*W}\n")
-    if csv_path:
-        with open(csv_path, "w", newline="") as f:
-            csv.writer(f).writerows([["expert_id", "total_us", "bw_GBps"]] + rows_csv)
-
-
-# ================================================================== #
-#  打印表格：顺序多 Expert 延迟                                        #
+#  打印表格：顺序读取延迟                                              #
 # ================================================================== #
 
 def print_sequential_latency_table(
@@ -911,236 +770,31 @@ def print_sequential_latency_table(
 
 
 # ================================================================== #
-#  入口示例                                                            #
+#  CLI 入口（简化版）                                                  #
 # ================================================================== #
 
-def parse_expert_ids(value: str) -> List[int]:
-    """解析 expert_ids，支持 '0,1,2,3' 或 '0-5' 或 '0-3,5,7-9' 格式"""
-    result = []
-    for part in value.split(','):
-        part = part.strip()
-        if '-' in part:
-            start, end = part.split('-')
-            result.extend(range(int(start), int(end) + 1))
-        else:
-            result.append(int(part))
-    return result
-
-
 def main():
+    """简化版 CLI，主要用于直接启动 GUI"""
+    import sys
     import argparse
     
     parser = argparse.ArgumentParser(
-        description='NAND Flash MoE Simulator - 模拟MoE专家存储在NAND上的读取行为',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-示例:
-  nand.exe -c 8 -p 8 -s 16384 --bw 30e9 --tr 22e-6 -e 0,1,2,3
-  nand.exe -c 8 -p 8 --layout pl-first -e 0-9 --csv result.csv
-  nand.exe --experts 0,1,5 --intra --inter --viz layout.png
-        """
+        description='NAND Flash MoE Simulator - GUI版本',
+        epilog="直接运行启动GUI，或使用 --help 查看帮助"
     )
-    
-    # 硬件几何参数
-    hw_group = parser.add_argument_group('硬件几何参数 (NAND Geometry)')
-    hw_group.add_argument('-c', '--channels', type=int, default=8,
-                          help='NAND通道数 (默认: 8)')
-    hw_group.add_argument('-p', '--planes', type=int, default=8,
-                          help='每通道平面数 (默认: 8)')
-    hw_group.add_argument('-s', '--page-size', type=int, default=16384,
-                          help='每页字节数 (默认: 16384 = 16KB)')
-    
-    # 性能参数
-    perf_group = parser.add_argument_group('性能参数 (Performance)')
-    perf_group.add_argument('--bw', type=float, default=3.75e9,
-                            help='单通道带宽 (字节/秒，默认: 3.75e9 = 3.75GB/s)')
-    perf_group.add_argument('--tr', type=float, default=22e-6,
-                            help='读延迟tR (秒，默认: 22e-6 = 22us)')
-    
-    # 专家参数
-    expert_group = parser.add_argument_group('专家参数 (Expert)')
-    expert_group.add_argument('-e', '--experts', type=str, default='0,1,2',
-                              help='要模拟的专家ID列表，支持逗号或范围格式，如 "0,1,2" 或 "0-9" 或 "0-3,5,7-9" (默认: 0,1,2)')
-    expert_group.add_argument('--num-experts', type=int, default=10,
-                              help='总专家数量，用于布局 (默认: 10)')
-    expert_group.add_argument('--gate-bytes', type=int, default=294912,
-                              help='gate部分字节数 (默认: 294912 = 288KB)')
-    expert_group.add_argument('--up-bytes', type=int, default=294912,
-                              help='up部分字节数 (默认: 294912 = 288KB)')
-    expert_group.add_argument('--down-bytes', type=int, default=294912,
-                              help='down部分字节数 (默认: 294912 = 288KB)')
-    
-    # 布局选项
-    layout_group = parser.add_argument_group('布局选项 (Layout)')
-    layout_group.add_argument('--layout', choices=['ch-first', 'pl-first'], default='pl-first',
-                              help='布局方式: ch-first (默认，预取不触发) 或 pl-first (预取优化) (默认: pl-first)')
-    
-    # 缓存选项
-    cache_group = parser.add_argument_group('缓存选项 (Cache/Prefetch)')
-    cache_group.add_argument('--intra', action='store_true', default=True,
-                             help='启用intra-expert预取 (同专家gate->up->down预取) (默认: True)')
-    cache_group.add_argument('--no-intra', dest='intra', action='store_false',
-                             help='禁用intra-expert预取')
-    cache_group.add_argument('--inter', action='store_true', default=True,
-                             help='启用inter-expert预取 (跨专家预取) (默认: True)')
-    cache_group.add_argument('--no-inter', dest='inter', action='store_false',
-                             help='禁用inter-expert预取')
-    
-    # 输出选项
-    output_group = parser.add_argument_group('输出选项 (Output)')
-    output_group.add_argument('--csv', type=str,
-                              help='输出CSV文件路径')
-    output_group.add_argument('--viz', type=str,
-                              help='可视化输出图片路径 (如 layout.png)')
-    output_group.add_argument('--max-pages', type=int, default=20,
-                              help='可视化最大页数 (默认: 20)')
-    output_group.add_argument('--no-viz', action='store_true',
-                              help='不显示可视化窗口')
-    output_group.add_argument('--quiet', '-q', action='store_true',
-                              help='静默模式，只输出结果')
-    
-    # GUI 选项
-    gui_group = parser.add_argument_group('GUI 选项')
-    gui_group.add_argument('--gui', action='store_true',
-                           help='启动图形界面（忽略其他参数）')
-    
+    parser.add_argument('--gui', action='store_true', help='启动图形界面（默认行为）')
     args = parser.parse_args()
     
-    # 如果指定了 --gui，启动图形界面
-    if args.gui:
-        try:
-            from gui import main_gui
-            main_gui()
-            return 0
-        except ImportError as e:
-            print(f"错误: 无法启动 GUI: {e}")
-            return 1
-    
-    # 解析 expert_ids
+    # 总是启动 GUI
     try:
-        expert_ids = parse_expert_ids(args.experts)
-    except ValueError as e:
-        print(f"错误: expert_ids格式无效 '{args.experts}': {e}")
+        from gui import main as gui_main
+        gui_main()
+        return 0
+    except ImportError as e:
+        print(f"错误: 无法启动 GUI: {e}")
         return 1
-    
-    # 验证参数
-    if args.channels <= 0 or args.planes <= 0 or args.page_size <= 0:
-        print("错误: channels, planes, page-size 必须大于0")
-        return 1
-    if args.bw <= 0 or args.tr <= 0:
-        print("错误: bw 和 tr 必须大于0")
-        return 1
-    if not expert_ids:
-        print("错误: 至少需要指定一个expert")
-        return 1
-    
-    # 创建几何配置
-    geo = NandGeometry(
-        channels=args.channels,
-        planes_per_channel=args.planes,
-        page_size_bytes=args.page_size
-    )
-    
-    if not args.quiet:
-        print(f"\n{'='*60}")
-        print("NAND Flash MoE Simulator")
-        print(f"{'='*60}")
-        print(f"硬件配置: {args.channels}通道 x {args.planes}平面, 页大小={args.page_size}字节")
-        print(f"性能参数: 带宽={args.bw/1e9:.1f}GB/s, tR={args.tr*1e6:.1f}us")
-        print(f"布局方式: {args.layout}")
-        print(f"缓存选项: intra={'ON' if args.intra else 'OFF'}, inter={'ON' if args.inter else 'OFF'}")
-        print(f"模拟专家: {expert_ids}")
-        print(f"{'='*60}\n")
-    
-    # 选择布局函数
-    if args.layout == 'pl-first':
-        sim = place_experts_page_rr_pl_first(
-            geo, args.num_experts,
-            args.gate_bytes, args.up_bytes, args.down_bytes
-        )
-    else:
-        sim = place_experts_page_rr(
-            geo, args.num_experts,
-            args.gate_bytes, args.up_bytes, args.down_bytes
-        )
-    
-    # 可视化
-    if args.viz:
-        visualize_layout(sim, expert_ids=expert_ids, max_pages=args.max_pages,
-                         title=f"Expert Layout ({args.layout})", save_path=args.viz)
-        if not args.quiet:
-            print(f"[布局图已保存] {args.viz}")
-    elif not args.no_viz:
-        try:
-            visualize_layout(sim, expert_ids=expert_ids, max_pages=args.max_pages,
-                             title=f"Expert Layout ({args.layout})")
-        except Exception as e:
-            if not args.quiet:
-                print(f"[可视化失败: {e}]")
-    
-    # 顺序延迟仿真
-    result = print_sequential_latency_table(
-        sim, expert_ids,
-        bw_total_Bps=args.bw, tR_sec=args.tr,
-        intra_expert_cache=args.intra,
-        inter_expert_cache=args.inter,
-        csv_path=args.csv,
-        quiet=args.quiet
-    )
-    
-    if args.csv and not args.quiet:
-        print(f"\n[CSV已保存] {args.csv}")
-    
-    # 输出有效带宽和简要分析
-    eff_bw = result['effective_bw_Bps']
-    total_bw = args.bw * args.channels  # 单通道带宽 × 通道数
-    utilization = (eff_bw / total_bw) * 100 if total_bw > 0 else 0
-    
-    if args.quiet:
-        # Quiet模式：只输出关键结果
-        print(f"\n有效带宽: {eff_bw/1e9:.3f} GB/s (利用率: {utilization:.1f}%)")
-    else:
-        print(f"\n有效带宽: {eff_bw/1e9:.3f} GB/s")
-    
-    return 0
-
-
-def main_with_gui():
-    """支持 GUI 的入口"""
-    import sys
-    
-    # 检查是否有命令行参数（除了脚本名）
-    if len(sys.argv) == 1:
-        # 无参数，启动 GUI
-        try:
-            from gui import main_gui
-            main_gui()
-            return 0
-        except ImportError:
-            # GUI 模块不可用，显示帮助
-            print("NAND Flash MoE Simulator")
-            print("=" * 60)
-            print("运行方式:")
-            print("  1. 图形界面: 直接双击运行，或使用 --gui 参数")
-            print("  2. 命令行: 使用参数运行，如: python nand.py -c 8 -p 8")
-            print("\n使用 --help 查看所有命令行参数")
-            return 1
-    
-    # 检查是否有 --gui 参数
-    if "--gui" in sys.argv:
-        sys.argv.remove("--gui")
-        try:
-            from gui import main_gui
-            main_gui()
-            return 0
-        except ImportError as e:
-            print(f"错误: 无法启动 GUI: {e}")
-            return 1
-    
-    # 命令行模式
-    return main()
 
 
 if __name__ == "__main__":
     import sys
-    sys.exit(main_with_gui())
+    sys.exit(main())
