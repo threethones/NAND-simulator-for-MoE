@@ -120,11 +120,11 @@ class NandSimulatorGUI:
         layout_frame = ttk.LabelFrame(main_frame, text="布局选项 (Layout)", padding="5")
         layout_frame.grid(row=3, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5, padx=(0, 5))
         
-        self.layout_var = tk.StringVar(value="pl-first")
-        ttk.Radiobutton(layout_frame, text="PL-first (默认SLC)", variable=self.layout_var,
-                       value="pl-first").grid(row=0, column=0, sticky=tk.W, padx=5)
+        self.layout_var = tk.StringVar(value="ch-first")
         ttk.Radiobutton(layout_frame, text="CH-first (跳跃SLC)", variable=self.layout_var,
-                       value="ch-first").grid(row=1, column=0, sticky=tk.W, padx=5)
+                       value="ch-first").grid(row=0, column=0, sticky=tk.W, padx=5)
+        ttk.Radiobutton(layout_frame, text="PL-first (默认SLC)", variable=self.layout_var,
+                       value="pl-first").grid(row=1, column=0, sticky=tk.W, padx=5)
         
         # ========== 缓存选项 ==========
         cache_frame = ttk.LabelFrame(main_frame, text="缓存选项 (Cache)", padding="5")
