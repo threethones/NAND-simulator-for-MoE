@@ -30,8 +30,25 @@ NAND Flash MoE 仿真器 - 模拟 Mixture-of-Experts (MoE) 模型中专家参数
 
 ## 快速开始
 
-### 方式一：直接运行 Python 源码
+### 方式一：图形界面 (GUI) ⭐推荐
 
+**Windows 用户：** 直接双击 `NAND_MoE_Simulator.exe` 即可启动图形界面
+
+**Python 用户：**
+```bash
+python nand.py          # 无参数自动启动 GUI
+python nand.py --gui    # 显式启动 GUI
+```
+
+GUI 功能特点：
+- 可视化参数输入，无需记忆命令行
+- 预设配置快速加载（消费级/企业级/高性能 SSD）
+- 实时显示仿真结果
+- 一键导出 CSV 和布局图
+
+### 方式二：命令行模式
+
+**Python 源码：**
 ```bash
 # 安装依赖
 pip install matplotlib numpy
@@ -40,10 +57,7 @@ pip install matplotlib numpy
 python nand.py -c 8 -p 8 --bw 30e9 --tr 22e-6 -e 0,1,2
 ```
 
-### 方式二：使用 Windows 可执行文件
-
-下载 `dist/NAND_MoE_Simulator.exe`，直接双击或在命令行运行：
-
+**Windows 可执行文件：**
 ```cmd
 NAND_MoE_Simulator.exe -c 8 -p 8 --bw 30e9 --tr 22e-6 -e 0,1,2
 ```
@@ -105,6 +119,17 @@ NAND_MoE_Simulator.exe -c 8 -p 8 --bw 30e9 --tr 22e-6 -e 0,1,2
 | `--max-pages` | 可视化最大页数（默认 20） |
 | `--no-viz` | 不显示可视化窗口 |
 | `--quiet` / `-q` | 静默模式，只输出结果 |
+
+### GUI 选项
+
+| 参数 | 说明 |
+|------|------|
+| `--gui` | 启动图形界面（忽略其他参数） |
+
+**启动 GUI 的方式：**
+1. 直接双击 `NAND_MoE_Simulator.exe`
+2. 运行 `python nand.py`（无参数自动启动 GUI）
+3. 运行 `python nand.py --gui`
 
 ---
 

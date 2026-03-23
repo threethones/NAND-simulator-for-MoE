@@ -1021,7 +1021,22 @@ def main():
     output_group.add_argument('--quiet', '-q', action='store_true',
                               help='静默模式，只输出结果')
     
+    # GUI 选项
+    gui_group = parser.add_argument_group('GUI 选项')
+    gui_group.add_argument('--gui', action='store_true',
+                           help='启动图形界面（忽略其他参数）')
+    
     args = parser.parse_args()
+    
+    # 如果指定了 --gui，启动图形界面
+    if args.gui:
+        try:
+            from gui import main_gui
+            main_gui()
+            return 0
+        except ImportError as e:
+            print(f"错误: 无法启动 GUI: {e}")
+            return 1
     
     # 解析 expert_ids
     try:
@@ -1112,6 +1127,42 @@ def main():
     return 0
 
 
+def main_with_gui():
+    """支持 GUI 的入口"""
+    import sys
+    
+    # 检查是否有命令行参数（除了脚本名）
+    if len(sys.argv) == 1:
+        # 无参数，启动 GUI
+        try:
+            from gui import main_gui
+            main_gui()
+            return 0
+        except ImportError:
+            # GUI 模块不可用，显示帮助
+            print("NAND Flash MoE Simulator")
+            print("=" * 60)
+            print("运行方式:")
+            print("  1. 图形界面: 直接双击运行，或使用 --gui 参数")
+            print("  2. 命令行: 使用参数运行，如: python nand.py -c 8 -p 8")
+            print("\n使用 --help 查看所有命令行参数")
+            return 1
+    
+    # 检查是否有 --gui 参数
+    if "--gui" in sys.argv:
+        sys.argv.remove("--gui")
+        try:
+            from gui import main_gui
+            main_gui()
+            return 0
+        except ImportError as e:
+            print(f"错误: 无法启动 GUI: {e}")
+            return 1
+    
+    # 命令行模式
+    return main()
+
+
 if __name__ == "__main__":
     import sys
-    sys.exit(main())
+    sys.exit(main_with_gui())
