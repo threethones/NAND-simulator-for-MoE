@@ -1,406 +1,762 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-NAND Flash MoE Simulator - GUI 版本
-使用 tkinter 构建图形界面
+NAND MoE Simulator - GUI 版本
+支持硬件参数配置、布局可视化、结果展示和 TopK 分析
 """
 
 import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox, filedialog
+from tkinter import ttk, messagebox, scrolledtext
 import threading
 import sys
 import io
-from contextlib import redirect_stdout, redirect_stderr
+import numpy as np
 
-# 导入核心仿真模块
+# 导入核心模块
 from nand import (
     NandGeometry, place_experts_page_rr, place_experts_page_rr_pl_first,
-    visualize_layout, print_sequential_latency_table, parse_expert_ids
+    NandSimulator, estimate_sequential_latency
 )
+
+# 尝试导入 matplotlib
+matplotlib_available = False
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib
+    matplotlib.rcParams['font.family'] = 'Microsoft YaHei'
+    matplotlib.rcParams['axes.unicode_minus'] = False
+    matplotlib_available = True
+except ImportError:
+    pass
+
+# 尝试导入 TopK 分析模块
+topk_available = False
+try:
+    from layout_analyse import run_topk_analysis, plot_prefetch_comparison
+    topk_available = True
+except ImportError:
+    pass
 
 
 class RedirectText(io.StringIO):
-    """重定向 stdout/stderr 到 Tkinter 文本框"""
+    """将 stdout 重定向到 tkinter 文本框"""
     def __init__(self, text_widget):
         super().__init__()
         self.text_widget = text_widget
         
-    def write(self, string):
-        self.text_widget.insert(tk.END, string)
+    def write(self, s):
+        self.text_widget.insert(tk.END, s)
         self.text_widget.see(tk.END)
-        self.text_widget.update()
+        
+    def flush(self):
+        pass
 
 
 class NandSimulatorGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("NAND Flash MoE Simulator")
+        self.root.title("NAND MoE Simulator")
         self.root.geometry("1200x900")
         self.root.minsize(1000, 700)
         
-        # 创建主框架
-        self.create_widgets()
+        # 预设配置
+        self.presets = {
+            "低配NAND": {
+                "channels": 4,
+                "planes": 4,
+                "page_size": 16,
+                "bw": 1.75,
+                "tr": 50,
+            },
+            "高配NAND": {
+                "channels": 8,
+                "planes": 8,
+                "page_size": 16,
+                "bw": 3.75,
+                "tr": 22,
+            },
+        }
         
-    def create_widgets(self):
+        # 颜色定义
+        self.colors = {
+            'bg': '#f5f5f5',
+            'frame': '#ffffff',
+            'accent': '#2196F3',
+            'text': '#333333',
+            'success': '#4CAF50',
+            'warning': '#FF9800',
+        }
+        
+        self.root.configure(bg=self.colors['bg'])
+        
+        # 创建 Notebook 标签页
+        self.notebook = ttk.Notebook(root)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # 主模拟标签页
+        self.sim_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.sim_frame, text='\u4e3b\u6a21\u62df')
+        
+        # TopK 分析标签页
+        self.topk_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.topk_frame, text='TopK \u5206\u6790')
+        
+        # 初始化两个标签页
+        self._init_sim_tab()
+        if topk_available:
+            self._init_topk_tab()
+        else:
+            self._init_topk_unavailable()
+    
+    def _init_sim_tab(self):
+        """初始化主模拟标签页"""
         # 主容器
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        main_container = tk.Frame(self.sim_frame, bg=self.colors['bg'])
+        main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # 配置 grid 权重
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=1)
-        main_frame.columnconfigure(3, weight=1)
+        # 左侧：参数输入面板
+        left_panel = tk.Frame(main_container, bg=self.colors['frame'], bd=2, relief=tk.GROOVE)
+        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
         
-        # ========== 硬件几何参数 ==========
-        hw_frame = ttk.LabelFrame(main_frame, text="硬件几何参数 (NAND Geometry)", padding="5")
-        hw_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
-        hw_frame.columnconfigure(1, weight=1)
+        # 硬件配置参数
+        hw_frame = tk.LabelFrame(left_panel, text="\u786c\u4ef6\u914d\u7f6e\u53c2\u6570", 
+                                  bg=self.colors['frame'], padx=10, pady=10)
+        hw_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
         
-        # Channels
-        ttk.Label(hw_frame, text="通道数 (Channels):").grid(row=0, column=0, sticky=tk.W, padx=5)
+        # 预设按钮放在最上面
+        tk.Button(hw_frame, text="\u52a0\u8f7d\u9884\u8bbe\u914d\u7f6e", 
+                  command=self._show_preset_menu,
+                  bg=self.colors['accent'], fg='white',
+                  font=('Microsoft YaHei', 9)).pack(fill=tk.X, pady=(0, 10))
+        
+        # 通道数
+        tk.Label(hw_frame, text="\u901a\u9053\u6570 (Channels):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
         self.channels_var = tk.IntVar(value=8)
-        ttk.Spinbox(hw_frame, from_=1, to=32, textvariable=self.channels_var, width=10).grid(row=0, column=1, sticky=tk.W, padx=5)
+        tk.Spinbox(hw_frame, from_=1, to=64, textvariable=self.channels_var, 
+                   width=15).pack(fill=tk.X, pady=(0, 5))
         
-        # Planes
-        ttk.Label(hw_frame, text="平面数/通道 (Planes):").grid(row=0, column=2, sticky=tk.W, padx=5)
+        # Plane 数
+        tk.Label(hw_frame, text="\u6bcf\u901a\u9053 Plane \u6570:", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
         self.planes_var = tk.IntVar(value=8)
-        ttk.Spinbox(hw_frame, from_=1, to=16, textvariable=self.planes_var, width=10).grid(row=0, column=3, sticky=tk.W, padx=5)
+        tk.Spinbox(hw_frame, from_=1, to=16, textvariable=self.planes_var, 
+                   width=15).pack(fill=tk.X, pady=(0, 5))
         
         # Page Size
-        ttk.Label(hw_frame, text="页大小 (Bytes):").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
-        self.page_size_var = tk.IntVar(value=16384)
-        page_sizes = [4096, 8192, 16384, 32768]
-        ttk.Combobox(hw_frame, textvariable=self.page_size_var, values=page_sizes, width=10).grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
+        tk.Label(hw_frame, text="Page Size (KB):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
+        self.page_size_var = tk.IntVar(value=16)
+        tk.Spinbox(hw_frame, from_=1, to=64, textvariable=self.page_size_var, 
+                   width=15).pack(fill=tk.X, pady=(0, 5))
         
-        # 加载预设按钮
-        ttk.Button(hw_frame, text="加载预设", command=self.load_preset, width=12).grid(row=1, column=2, padx=5, pady=5)
+        # 硬件性能参数
+        perf_frame = tk.LabelFrame(left_panel, text="\u786c\u4ef6\u6027\u80fd\u53c2\u6570", 
+                                   bg=self.colors['frame'], padx=10, pady=10)
+        perf_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        # ========== 性能参数 ==========
-        perf_frame = ttk.LabelFrame(main_frame, text="性能参数 (Performance)", padding="5")
-        perf_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
-        perf_frame.columnconfigure(1, weight=1)
-        
-        # Bandwidth (单通道)
-        ttk.Label(perf_frame, text="单通道带宽 (GB/s):").grid(row=0, column=0, sticky=tk.W, padx=5)
+        # 单通道带宽
+        tk.Label(perf_frame, text="\u5355\u901a\u9053\u5e26\u5bbd (GB/s):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
         self.bw_var = tk.DoubleVar(value=3.75)
-        ttk.Entry(perf_frame, textvariable=self.bw_var, width=12).grid(row=0, column=1, sticky=tk.W, padx=5)
+        tk.Entry(perf_frame, textvariable=self.bw_var, width=17).pack(fill=tk.X, pady=(0, 5))
         
-        # tR
-        ttk.Label(perf_frame, text="读延迟 tR (us):").grid(row=0, column=2, sticky=tk.W, padx=5)
+        # tR 延迟
+        tk.Label(perf_frame, text="tR \u8bfb\u53d6\u5ef6\u8fdf (\u03bcs):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
         self.tr_var = tk.DoubleVar(value=22.0)
-        ttk.Entry(perf_frame, textvariable=self.tr_var, width=12).grid(row=0, column=3, sticky=tk.W, padx=5)
+        tk.Entry(perf_frame, textvariable=self.tr_var, width=17).pack(fill=tk.X, pady=(0, 5))
         
-        # ========== 专家参数 ==========
-        expert_frame = ttk.LabelFrame(main_frame, text="专家参数 (Expert)", padding="5")
-        expert_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
-        expert_frame.columnconfigure(1, weight=1)
-        expert_frame.columnconfigure(3, weight=1)
+        # MoE 模型参数
+        moe_frame = tk.LabelFrame(left_panel, text="MoE \u6a21\u578b\u53c2\u6570", 
+                                  bg=self.colors['frame'], padx=10, pady=10)
+        moe_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        # Expert IDs
-        ttk.Label(expert_frame, text="专家 IDs:").grid(row=0, column=0, sticky=tk.W, padx=5)
-        self.experts_var = tk.StringVar(value="0,1,2")
-        ttk.Entry(expert_frame, textvariable=self.experts_var, width=20).grid(row=0, column=1, sticky=(tk.W, tk.E), padx=5)
-        ttk.Label(expert_frame, text="(如: 0,1,2 或 0-5)").grid(row=0, column=2, sticky=tk.W)
+        # Expert 数量
+        tk.Label(moe_frame, text="Expert \u603b\u6570:", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
+        self.num_experts_var = tk.IntVar(value=512)
+        tk.Spinbox(moe_frame, from_=1, to=2048, textvariable=self.num_experts_var, 
+                   width=15).pack(fill=tk.X, pady=(0, 5))
         
-        # Num Experts
-        ttk.Label(expert_frame, text="总专家数:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
-        self.num_experts_var = tk.IntVar(value=10)
-        ttk.Spinbox(expert_frame, from_=1, to=100, textvariable=self.num_experts_var, width=10).grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
-        
-        # Expert sizes
-        ttk.Label(expert_frame, text="Gate (Bytes):").grid(row=2, column=0, sticky=tk.W, padx=5)
+        # Gate 大小
+        tk.Label(moe_frame, text="Gate \u53c2\u6570\u5927\u5c0f (bytes):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
         self.gate_bytes_var = tk.IntVar(value=294912)
-        ttk.Entry(expert_frame, textvariable=self.gate_bytes_var, width=12).grid(row=2, column=1, sticky=tk.W, padx=5)
+        tk.Entry(moe_frame, textvariable=self.gate_bytes_var, width=17).pack(fill=tk.X, pady=(0, 5))
         
-        ttk.Label(expert_frame, text="Up (Bytes):").grid(row=2, column=2, sticky=tk.W, padx=5)
+        # Up 大小
+        tk.Label(moe_frame, text="Up \u53c2\u6570\u5927\u5c0f (bytes):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
         self.up_bytes_var = tk.IntVar(value=294912)
-        ttk.Entry(expert_frame, textvariable=self.up_bytes_var, width=12).grid(row=2, column=3, sticky=tk.W, padx=5)
+        tk.Entry(moe_frame, textvariable=self.up_bytes_var, width=17).pack(fill=tk.X, pady=(0, 5))
         
-        ttk.Label(expert_frame, text="Down (Bytes):").grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
+        # Down 大小
+        tk.Label(moe_frame, text="Down \u53c2\u6570\u5927\u5c0f (bytes):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
         self.down_bytes_var = tk.IntVar(value=294912)
-        ttk.Entry(expert_frame, textvariable=self.down_bytes_var, width=12).grid(row=3, column=1, sticky=tk.W, padx=5, pady=5)
+        tk.Entry(moe_frame, textvariable=self.down_bytes_var, width=17).pack(fill=tk.X, pady=(0, 5))
         
-        # ========== 布局选项 ==========
-        layout_frame = ttk.LabelFrame(main_frame, text="布局选项 (Layout)", padding="5")
-        layout_frame.grid(row=3, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5, padx=(0, 5))
+        # TopK 和 Expert 选择
+        topk_frame = tk.LabelFrame(left_panel, text="\u4e13\u5bb6\u547d\u4e2d\u914d\u7f6e", 
+                                   bg=self.colors['frame'], padx=10, pady=10)
+        topk_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        self.layout_var = tk.StringVar(value="ch-first")
-        ttk.Radiobutton(layout_frame, text="CH-first (跳跃SLC)", variable=self.layout_var,
-                       value="ch-first").grid(row=0, column=0, sticky=tk.W, padx=5)
-        ttk.Radiobutton(layout_frame, text="PL-first (默认SLC)", variable=self.layout_var,
-                       value="pl-first").grid(row=1, column=0, sticky=tk.W, padx=5)
+        tk.Label(topk_frame, text="TopK (\u9009\u62e9 Expert \u6570):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
+        self.topk_var = tk.IntVar(value=10)
+        tk.Spinbox(topk_frame, from_=1, to=50, textvariable=self.topk_var, 
+                   width=15).pack(fill=tk.X, pady=(0, 5))
         
-        # ========== 缓存选项 ==========
-        cache_frame = ttk.LabelFrame(main_frame, text="缓存选项 (Cache)", padding="5")
-        cache_frame.grid(row=3, column=1, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        tk.Label(topk_frame, text="Expert IDs (\u7528\u9017\u53f7\u5206\u9694):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
+        self.expert_ids_var = tk.StringVar(value="0,1,2,3,4,5,6,7,8,9")
+        tk.Entry(topk_frame, textvariable=self.expert_ids_var, width=17).pack(fill=tk.X, pady=(0, 5))
+        
+        # 布局选择
+        layout_frame = tk.LabelFrame(left_panel, text="\u5e03\u5c40\u9009\u62e9", 
+                                     bg=self.colors['frame'], padx=10, pady=10)
+        layout_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.layout_var = tk.StringVar(value="ch_first")
+        tk.Radiobutton(layout_frame, text="CH-first (\u8df3\u8dc3SLC)", 
+                       variable=self.layout_var, value="ch_first",
+                       bg=self.colors['frame']).pack(anchor=tk.W)
+        tk.Radiobutton(layout_frame, text="PL-first (\u9ed8\u8ba4SLC)", 
+                       variable=self.layout_var, value="pl_first",
+                       bg=self.colors['frame']).pack(anchor=tk.W)
+        
+        # 预取选项
+        prefetch_frame = tk.LabelFrame(left_panel, text="\u9884\u53d6\u9009\u9879", 
+                                       bg=self.colors['frame'], padx=10, pady=10)
+        prefetch_frame.pack(fill=tk.X, padx=10, pady=5)
         
         self.intra_var = tk.BooleanVar(value=True)
         self.inter_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(cache_frame, text="Intra-expert 预取", variable=self.intra_var).grid(row=0, column=0, sticky=tk.W, padx=5)
-        ttk.Checkbutton(cache_frame, text="Inter-expert 预取", variable=self.inter_var).grid(row=1, column=0, sticky=tk.W, padx=5)
+        tk.Checkbutton(prefetch_frame, text="\u542f\u7528\u4e13\u5bb6\u5185\u9884\u53d6", 
+                       variable=self.intra_var, bg=self.colors['frame']).pack(anchor=tk.W)
+        tk.Checkbutton(prefetch_frame, text="\u542f\u7528\u4e13\u5bb6\u95f4\u9884\u53d6", 
+                       variable=self.inter_var, bg=self.colors['frame']).pack(anchor=tk.W)
         
-        # ========== 输出选项 ==========
-        output_frame = ttk.LabelFrame(main_frame, text="输出选项 (Output)", padding="5")
-        output_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
-        output_frame.columnconfigure(1, weight=1)
-        
-        self.csv_var = tk.StringVar()
-        ttk.Checkbutton(output_frame, text="导出 CSV:", command=self.toggle_csv).grid(row=0, column=0, sticky=tk.W, padx=5)
-        self.csv_entry = ttk.Entry(output_frame, textvariable=self.csv_var, width=30, state="disabled")
-        self.csv_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=5)
-        ttk.Button(output_frame, text="浏览...", command=self.browse_csv).grid(row=0, column=2, padx=5)
-        
-        self.viz_var = tk.StringVar()
-        ttk.Checkbutton(output_frame, text="保存布局图:", command=self.toggle_viz).grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
-        self.viz_entry = ttk.Entry(output_frame, textvariable=self.viz_var, width=30, state="disabled")
-        self.viz_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
-        ttk.Button(output_frame, text="浏览...", command=self.browse_viz).grid(row=1, column=2, padx=5, pady=5)
+        # 运行按钮
+        self.run_btn = tk.Button(left_panel, text="\u8fd0\u884c\u6a21\u62df", 
+                                  command=self.run_simulation,
+                                  bg=self.colors['success'], fg='white',
+                                  font=('Microsoft YaHei', 12, 'bold'),
+                                  height=2)
+        self.run_btn.pack(fill=tk.X, padx=10, pady=10)
         
         # 显示布局图选项
-        self.show_viz_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(output_frame, text="运行后显示布局图", variable=self.show_viz_var).grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        self.show_plot_var = tk.BooleanVar(value=False)
+        if matplotlib_available:
+            tk.Checkbutton(left_panel, text="\u8fd0\u884c\u540e\u663e\u793a\u5e03\u5c40\u56fe", 
+                          variable=self.show_plot_var, 
+                          bg=self.colors['frame']).pack(fill=tk.X, padx=10, pady=(0, 10))
         
-        # ========== 运行按钮 ==========
-        button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=5, column=0, columnspan=2, pady=10)
+        # 右侧：输出显示面板
+        right_panel = tk.Frame(main_container, bg=self.colors['frame'], bd=2, relief=tk.GROOVE)
+        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         
-        ttk.Button(button_frame, text="运行仿真", command=self.run_simulation, 
-                  width=20).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="清除输出", command=self.clear_output, 
-                  width=15).pack(side=tk.LEFT, padx=5)
+        # 输出文本区域
+        tk.Label(right_panel, text="\u6a21\u62df\u7ed3\u679c", 
+                 bg=self.colors['frame'], font=('Microsoft YaHei', 10, 'bold')).pack(pady=5)
         
-        # ========== 结果显示区 ==========
-        result_frame = ttk.LabelFrame(main_frame, text="仿真结果", padding="5")
-        result_frame.grid(row=6, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
-        result_frame.columnconfigure(0, weight=1)
-        result_frame.rowconfigure(0, weight=1)
-        main_frame.rowconfigure(6, weight=1)
-        
-        self.result_text = scrolledtext.ScrolledText(result_frame, wrap=tk.WORD, 
-                                                     width=100, height=35, font=("Consolas", 10))
-        self.result_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        # 状态栏
-        self.status_var = tk.StringVar(value="就绪")
-        status_bar = ttk.Label(main_frame, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
-        status_bar.grid(row=7, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(5, 0))
-        
-    def toggle_csv(self):
-        if self.csv_entry.cget("state") == "disabled":
-            self.csv_entry.config(state="normal")
-        else:
-            self.csv_entry.config(state="disabled")
-            self.csv_var.set("")
-    
-    def toggle_viz(self):
-        if self.viz_entry.cget("state") == "disabled":
-            self.viz_entry.config(state="normal")
-        else:
-            self.viz_entry.config(state="disabled")
-            self.viz_var.set("")
-    
-    def browse_csv(self):
-        filename = filedialog.asksaveasfilename(
-            defaultextension=".csv",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        self.output_text = scrolledtext.ScrolledText(
+            right_panel, wrap=tk.NONE, 
+            font=('Consolas', 10),
+            width=100, height=35
         )
-        if filename:
-            self.csv_var.set(filename)
+        self.output_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
     
-    def browse_viz(self):
-        filename = filedialog.asksaveasfilename(
-            defaultextension=".png",
-            filetypes=[("PNG files", "*.png"), ("All files", "*.*")]
+    def _init_topk_tab(self):
+        """初始化 TopK 分析标签页"""
+        # 主容器
+        main_container = tk.Frame(self.topk_frame, bg=self.colors['bg'])
+        main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # 左侧：参数输入面板
+        left_panel = tk.Frame(main_container, bg=self.colors['frame'], bd=2, relief=tk.GROOVE)
+        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        
+        # 硬件配置参数（可编辑，与主标签页共享变量）
+        hw_config_frame = tk.LabelFrame(left_panel, text="\u786c\u4ef6\u914d\u7f6e\u53c2\u6570", 
+                                         bg=self.colors['frame'], padx=10, pady=10)
+        hw_config_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
+        
+        # 加载预设按钮
+        tk.Button(hw_config_frame, text="\u52a0\u8f7d\u9884\u8bbe\u914d\u7f6e", 
+                  command=self._show_preset_menu,
+                  bg=self.colors['accent'], fg='white',
+                  font=('Microsoft YaHei', 9)).pack(fill=tk.X, pady=(0, 10))
+        
+        # Channels
+        tk.Label(hw_config_frame, text="\u901a\u9053\u6570 (Channels):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
+        tk.Spinbox(hw_config_frame, from_=1, to=64, textvariable=self.channels_var, 
+                   width=15).pack(fill=tk.X, pady=(0, 5))
+        
+        # Planes
+        tk.Label(hw_config_frame, text="\u6bcf\u901a\u9053 Plane \u6570:", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
+        tk.Spinbox(hw_config_frame, from_=1, to=16, textvariable=self.planes_var, 
+                   width=15).pack(fill=tk.X, pady=(0, 5))
+        
+        # Page Size
+        tk.Label(hw_config_frame, text="Page Size (KB):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
+        tk.Spinbox(hw_config_frame, from_=1, to=64, textvariable=self.page_size_var, 
+                   width=15).pack(fill=tk.X, pady=(0, 5))
+        
+        # 硬件性能参数（可编辑，与主标签页共享变量）
+        hw_perf_frame = tk.LabelFrame(left_panel, text="\u786c\u4ef6\u6027\u80fd\u53c2\u6570", 
+                                       bg=self.colors['frame'], padx=10, pady=10)
+        hw_perf_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # 单通道带宽
+        tk.Label(hw_perf_frame, text="\u5355\u901a\u9053\u5e26\u5bbd (GB/s):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
+        tk.Entry(hw_perf_frame, textvariable=self.bw_var, width=17).pack(fill=tk.X, pady=(0, 5))
+        
+        # tR
+        tk.Label(hw_perf_frame, text="tR \u8bfb\u53d6\u5ef6\u8fdf (\u03bcs):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
+        tk.Entry(hw_perf_frame, textvariable=self.tr_var, width=17).pack(fill=tk.X, pady=(0, 5))
+        
+        # MoE 模型参数
+        moe_frame = tk.LabelFrame(left_panel, text="MoE \u6a21\u578b\u53c2\u6570", 
+                                  bg=self.colors['frame'], padx=10, pady=10)
+        moe_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Expert 总数
+        tk.Label(moe_frame, text="Expert \u603b\u6570:", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
+        self.topk_num_experts_var = tk.IntVar(value=512)
+        tk.Spinbox(moe_frame, from_=16, to=2048, textvariable=self.topk_num_experts_var, 
+                   width=15).pack(fill=tk.X, pady=(0, 5))
+        
+        # Gate 参数大小
+        tk.Label(moe_frame, text="Gate \u53c2\u6570\u5927\u5c0f (bytes):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
+        self.topk_gate_bytes_var = tk.IntVar(value=294912)
+        tk.Entry(moe_frame, textvariable=self.topk_gate_bytes_var, width=17).pack(fill=tk.X, pady=(0, 5))
+        
+        # Up 参数大小
+        tk.Label(moe_frame, text="Up \u53c2\u6570\u5927\u5c0f (bytes):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
+        self.topk_up_bytes_var = tk.IntVar(value=294912)
+        tk.Entry(moe_frame, textvariable=self.topk_up_bytes_var, width=17).pack(fill=tk.X, pady=(0, 5))
+        
+        # Down 参数大小
+        tk.Label(moe_frame, text="Down \u53c2\u6570\u5927\u5c0f (bytes):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
+        self.topk_down_bytes_var = tk.IntVar(value=294912)
+        tk.Entry(moe_frame, textvariable=self.topk_down_bytes_var, width=17).pack(fill=tk.X, pady=(0, 5))
+        
+        # 分析参数
+        params_frame = tk.LabelFrame(left_panel, text="\u5206\u6790\u53c2\u6570", 
+                                     bg=self.colors['frame'], padx=10, pady=10)
+        params_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # TopK
+        tk.Label(params_frame, text="TopK (\u6bcf\u6b21\u9009\u62e9 Expert \u6570):", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
+        self.topk_k_var = tk.IntVar(value=10)
+        tk.Spinbox(params_frame, from_=1, to=50, textvariable=self.topk_k_var, 
+                   width=15).pack(fill=tk.X, pady=(0, 5))
+        
+        # 实验次数
+        tk.Label(params_frame, text="\u5b9e\u9a8c\u6b21\u6570:", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
+        self.n_trials_var = tk.IntVar(value=200)
+        tk.Spinbox(params_frame, from_=10, to=1000, textvariable=self.n_trials_var, 
+                   width=15).pack(fill=tk.X, pady=(0, 5))
+        
+        # 布局选择
+        tk.Label(params_frame, text="\u5e03\u5c40\u9009\u62e9:", 
+                 bg=self.colors['frame']).pack(anchor=tk.W)
+        self.topk_layout_var = tk.StringVar(value="ch_first")
+        tk.Radiobutton(params_frame, text="CH-first (\u8df3\u8dc3SLC)", 
+                       variable=self.topk_layout_var, value="ch_first",
+                       bg=self.colors['frame']).pack(anchor=tk.W)
+        tk.Radiobutton(params_frame, text="PL-first (\u9ed8\u8ba4SLC)", 
+                       variable=self.topk_layout_var, value="pl_first",
+                       bg=self.colors['frame']).pack(anchor=tk.W)
+        
+        # 运行按钮
+        self.topk_run_btn = tk.Button(left_panel, text="\u8fd0\u884c TopK \u5206\u6790", 
+                                       command=self.run_topk_analysis,
+                                       bg=self.colors['accent'], fg='white',
+                                       font=('Microsoft YaHei', 12, 'bold'),
+                                       height=2)
+        self.topk_run_btn.pack(fill=tk.X, padx=10, pady=10)
+        
+        # 显示图表选项
+        self.topk_show_plot_var = tk.BooleanVar(value=True)
+        if matplotlib_available:
+            tk.Checkbutton(left_panel, text="\u663e\u793a\u5206\u6790\u56fe\u8868", 
+                          variable=self.topk_show_plot_var, 
+                          bg=self.colors['frame']).pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        # 右侧：结果显示面板
+        right_panel = tk.Frame(main_container, bg=self.colors['frame'], bd=2, relief=tk.GROOVE)
+        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        
+        # 输出文本区域
+        tk.Label(right_panel, text="\u4e13\u5bb6\u547d\u4e2d\u8bfbNAND\u884c\u4e3a\u5206\u6790", 
+                 bg=self.colors['frame'], font=('Microsoft YaHei', 10, 'bold')).pack(pady=5)
+        
+        self.topk_output_text = scrolledtext.ScrolledText(
+            right_panel, wrap=tk.NONE, 
+            font=('Consolas', 10),
+            width=120, height=40
         )
-        if filename:
-            self.viz_var.set(filename)
+        self.topk_output_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
     
-    def load_preset(self):
+    def _init_topk_unavailable(self):
+        """当 TopK 模块不可用时显示"""
+        frame = tk.Frame(self.topk_frame, bg=self.colors['bg'])
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        tk.Label(frame, 
+                 text="layout_analyse.py \u672a\u627e\u5230\n\n\u8bf7\u786e\u4fdd layout_analyse.py \u5728\u5f53\u524d\u76ee\u5f55",
+                 bg=self.colors['bg'], fg='red',
+                 font=('Microsoft YaHei', 14)).pack(expand=True)
+    
+    def _show_preset_menu(self):
+        """显示预设菜单"""
+        menu = tk.Menu(self.root, tearoff=0)
+        for name in self.presets:
+            menu.add_command(label=name, command=lambda n=name: self._load_preset(n))
+        menu.post(self.root.winfo_pointerx(), self.root.winfo_pointery())
+    
+    def _load_preset(self, preset_name):
         """加载预设配置"""
-        presets = {
-            "低配 NAND": {"channels": 4, "planes": 4, "bw": 1.75, "tr": 50},
-            "高配 NAND": {"channels": 8, "planes": 8, "bw": 3.75, "tr": 22},
-        }
+        preset = self.presets[preset_name]
+        self.channels_var.set(preset['channels'])
+        self.planes_var.set(preset['planes'])
+        self.page_size_var.set(preset['page_size'])
+        self.bw_var.set(preset['bw'])
+        self.tr_var.set(preset['tr'])
         
-        preset_window = tk.Toplevel(self.root)
-        preset_window.title("选择预设")
-        preset_window.geometry("300x150")
-        
-        ttk.Label(preset_window, text="选择配置预设:").pack(pady=10)
-        
-        preset_var = tk.StringVar()
-        for name in presets:
-            ttk.Radiobutton(preset_window, text=name, variable=preset_var, 
-                           value=name).pack(anchor=tk.W, padx=20)
-        
-        def apply():
-            if preset_var.get():
-                p = presets[preset_var.get()]
-                self.channels_var.set(p["channels"])
-                self.planes_var.set(p["planes"])
-                self.bw_var.set(p["bw"])
-                self.tr_var.set(p["tr"])
-                self.status_var.set(f"已加载预设: {preset_var.get()}")
-            preset_window.destroy()
-        
-        ttk.Button(preset_window, text="应用", command=apply).pack(pady=10)
+        # 更新输出
+        self.output_text.insert(tk.END, f"\n[\u9884\u8bbe] \u5df2\u52a0\u8f7d: {preset_name}\n")
+        self.output_text.insert(tk.END, f"  Channels: {preset['channels']}, Planes: {preset['planes']}\n")
+        self.output_text.insert(tk.END, f"  Page Size: {preset['page_size']} KB\n")
+        self.output_text.insert(tk.END, f"  BW: {preset['bw']} GB/s, tR: {preset['tr']} us\n")
+        self.output_text.see(tk.END)
     
-    def clear_output(self):
-        self.result_text.delete(1.0, tk.END)
-        self.status_var.set("输出已清除")
+    def _create_geometry(self):
+        """创建 NAND 几何结构"""
+        return NandGeometry(
+            channels=self.channels_var.get(),
+            planes_per_channel=self.planes_var.get(),
+            page_size_bytes=self.page_size_var.get() * 1024
+        )
     
-    def _show_layout_in_main_thread(self):
-        """在主线程中显示布局图（避免 matplotlib 多线程警告）"""
-        if hasattr(self, '_viz_data'):
-            try:
-                sim = self._viz_data['sim']
-                expert_ids = self._viz_data['expert_ids']
-                layout = self._viz_data['layout']
-                # 使用 block=False 让 GUI 不会被阻塞，同时关闭交互模式避免警告
-                import matplotlib.pyplot as plt
-                plt.ioff()  # 关闭交互模式
-                visualize_layout(sim, expert_ids=expert_ids, max_pages=20,
-                               title=f"Expert Layout ({layout})", block=True)
-            except Exception as e:
-                print(f"\n[显示布局图失败: {e}]")
-            finally:
-                delattr(self, '_viz_data')
+    def _place_experts(self, geo):
+        """根据布局选择放置 experts"""
+        layout = self.layout_var.get()
+        
+        if layout == "ch_first":
+            return place_experts_page_rr(
+                geo,
+                num_experts=self.num_experts_var.get(),
+                gate_bytes=self.gate_bytes_var.get(),
+                up_bytes=self.up_bytes_var.get(),
+                down_bytes=self.down_bytes_var.get()
+            )
+        else:
+            return place_experts_page_rr_pl_first(
+                geo,
+                num_experts=self.num_experts_var.get(),
+                gate_bytes=self.gate_bytes_var.get(),
+                up_bytes=self.up_bytes_var.get(),
+                down_bytes=self.down_bytes_var.get()
+            )
     
     def run_simulation(self):
-        """在后台线程运行仿真"""
-        self.status_var.set("正在运行仿真...")
-        self.result_text.delete(1.0, tk.END)
+        """运行模拟（在后台线程中）"""
+        self.run_btn.config(state=tk.DISABLED, text="\u6a21\u62df\u8fd0\u884c\u4e2d...")
+        self.output_text.delete(1.0, tk.END)
         
-        # 启动后台线程
-        thread = threading.Thread(target=self._do_simulation)
-        thread.daemon = True
+        thread = threading.Thread(target=self._do_simulation, daemon=True)
         thread.start()
     
     def _do_simulation(self):
-        """实际执行仿真"""
+        """实际模拟逻辑"""
         try:
+            # 捕获输出
+            old_stdout = sys.stdout
+            sys.stdout = RedirectText(self.output_text)
+            
+            # 创建几何结构和布局
+            geo = self._create_geometry()
+            sim = self._place_experts(geo)
+            
+            # 解析 expert IDs
+            expert_ids_str = self.expert_ids_var.get()
+            expert_ids = [int(x.strip()) for x in expert_ids_str.split(',') if x.strip()]
+            
             # 获取参数
-            channels = self.channels_var.get()
-            planes = self.planes_var.get()
-            page_size = self.page_size_var.get()
-            bw = self.bw_var.get() * 1e9  # GB/s -> B/s
-            tr = self.tr_var.get() * 1e-6  # us -> s
-            experts_str = self.experts_var.get()
-            num_experts = self.num_experts_var.get()
-            gate_bytes = self.gate_bytes_var.get()
-            up_bytes = self.up_bytes_var.get()
-            down_bytes = self.down_bytes_var.get()
-            layout = self.layout_var.get()
+            bw = self.bw_var.get() * 1e9  # 转换为 B/s
+            tR = self.tr_var.get() * 1e-6  # 转换为秒
             intra = self.intra_var.get()
             inter = self.inter_var.get()
-            csv_path = self.csv_var.get() if self.csv_var.get() else None
-            viz_path = self.viz_var.get() if self.viz_var.get() else None
-            show_viz = self.show_viz_var.get()
             
-            # 解析 expert_ids
-            try:
-                expert_ids = parse_expert_ids(experts_str)
-            except ValueError as e:
-                self.root.after(0, lambda: messagebox.showerror("参数错误", f"专家ID格式错误: {e}"))
-                self.root.after(0, lambda: self.status_var.set("参数错误"))
-                return
+            # 打印参数信息
+            print("=" * 80)
+            print("NAND MoE Simulator - \u6a21\u62df\u53c2\u6570")
+            print("=" * 80)
+            print(f"\u786c\u4ef6\u914d\u7f6e:")
+            print(f"  Channels: {geo.channels}, Planes/Channel: {geo.planes_per_channel}")
+            print(f"  Page Size: {geo.page_size_bytes / 1024:.0f} KB")
+            print(f"  \u603b\u5e26\u5bbd: {bw * geo.channels / 1e9:.2f} GB/s ({bw/1e9:.2f} GB/s \u00d7 {geo.channels} CH)")
+            print(f"  tR: {self.tr_var.get()} us")
+            print(f"\nMoE \u914d\u7f6e:")
+            print(f"  Expert \u603b\u6570: {self.num_experts_var.get()}")
+            print(f"  Gate: {self.gate_bytes_var.get()} bytes")
+            print(f"  Up/Down: {self.up_bytes_var.get()} bytes")
+            print(f"\nTopK \u914d\u7f6e:")
+            print(f"  TopK: {self.topk_var.get()}")
+            print(f"  Expert IDs: {expert_ids}")
+            print(f"\n\u9884\u53d6\u914d\u7f6e:")
+            print(f"  Intra-Expert: {intra}, Inter-Expert: {inter}")
+            print(f"  \u5e03\u5c40: {self.layout_var.get()}")
+            print("=" * 80)
+            print()
             
-            # 验证参数
-            if channels <= 0 or planes <= 0 or page_size <= 0:
-                self.root.after(0, lambda: messagebox.showerror("参数错误", "channels, planes, page-size 必须大于0"))
-                self.root.after(0, lambda: self.status_var.set("参数错误"))
-                return
+            # 运行模拟
+            from nand import print_sequential_latency_table
+            print_sequential_latency_table(
+                sim,
+                expert_ids,
+                bw_total_Bps=bw,
+                tR_sec=tR,
+                intra_expert_cache=intra,
+                inter_expert_cache=inter
+            )
             
-            if bw <= 0 or tr <= 0:
-                self.root.after(0, lambda: messagebox.showerror("参数错误", "bw 和 tr 必须大于0"))
-                self.root.after(0, lambda: self.status_var.set("参数错误"))
-                return
+            # 计算利用率
+            result = estimate_sequential_latency(
+                sim, expert_ids, bw_total_Bps=bw, tR_sec=tR,
+                intra_expert_cache=intra, inter_expert_cache=inter
+            )
+            eff_bw = result['total_bytes'] / result['total_time_sec'] / 1e9
+            total_bw = bw * geo.channels / 1e9
+            utilization = (eff_bw / total_bw) * 100
             
-            # 重定向输出
-            redirect = RedirectText(self.result_text)
+            print(f"\n[\u5e26\u5bbd\u5229\u7528\u7387]")
+            print(f"  \u603b\u7406\u8bba\u5e26\u5bbd: {total_bw:.3f} GB/s")
+            print(f"  \u5b9e\u9645\u6709\u6548\u5e26\u5bbd: {eff_bw:.3f} GB/s")
+            print(f"  \u5229\u7528\u7387: {utilization:.2f}%")
             
-            with redirect_stdout(redirect), redirect_stderr(redirect):
-                # 创建几何配置
-                geo = NandGeometry(
-                    channels=channels,
-                    planes_per_channel=planes,
-                    page_size_bytes=page_size
-                )
-                
-                print(f"\n{'='*60}")
-                print("NAND Flash MoE Simulator")
-                print(f"{'='*60}")
-                total_bw = bw * channels
-                print(f"硬件配置: {channels}通道 x {planes}平面, 页大小={page_size}字节")
-                print(f"性能参数: 单通道={bw/1e9:.2f}GB/s, 总带宽={total_bw/1e9:.1f}GB/s, tR={tr*1e6:.1f}us")
-                print(f"布局方式: {layout}")
-                print(f"缓存选项: intra={'ON' if intra else 'OFF'}, inter={'ON' if inter else 'OFF'}")
-                print(f"模拟专家: {expert_ids}")
-                print(f"{'='*60}\n")
-                
-                # 选择布局函数
-                if layout == 'pl-first':
-                    sim = place_experts_page_rr_pl_first(
-                        geo, num_experts, gate_bytes, up_bytes, down_bytes
-                    )
-                else:
-                    sim = place_experts_page_rr(
-                        geo, num_experts, gate_bytes, up_bytes, down_bytes
-                    )
-                
-                # 可视化
-                if viz_path:
-                    try:
-                        visualize_layout(sim, expert_ids=expert_ids, max_pages=20,
-                                       title=f"Expert Layout ({layout})", save_path=viz_path)
-                        print(f"\n[布局图已保存] {viz_path}")
-                    except Exception as e:
-                        print(f"\n[可视化失败: {e}]")
-                
-                # 显示布局图（如果用户选择）- 延迟到主线程执行
-                if show_viz:
-                    print(f"\n[正在准备布局图...]")
-                    # 保存 sim 和参数供后续使用
-                    self._viz_data = {
-                        'sim': sim,
-                        'expert_ids': expert_ids,
-                        'layout': layout
-                    }
-                    # 使用 after 在主线程中延迟显示
-                    self.root.after(100, self._show_layout_in_main_thread)
-                
-                # 顺序延迟仿真
-                result = print_sequential_latency_table(
-                    sim, expert_ids,
-                    bw_total_Bps=bw, tR_sec=tr,
-                    intra_expert_cache=intra,
-                    inter_expert_cache=inter,
-                    csv_path=csv_path
-                )
-                
-                if csv_path:
-                    print(f"\n[CSV已保存] {csv_path}")
-                
-                # 输出有效带宽
-                eff_bw = result['effective_bw_Bps']
-                total_bw = bw * channels  # 总带宽 = 单通道 × 通道数
-                utilization = (eff_bw / total_bw) * 100 if total_bw > 0 else 0
-                print(f"\n{'='*60}")
-                print(f"有效带宽: {eff_bw/1e9:.3f} GB/s (利用率: {utilization:.1f}%)")
-                print(f"{'='*60}\n")
-            
-            self.root.after(0, lambda: self.status_var.set(f"仿真完成 - 带宽: {eff_bw/1e9:.2f} GB/s"))
+            # 如果需要显示布局图
+            if self.show_plot_var.get() and matplotlib_available:
+                self.root.after(100, self._show_layout_in_main_thread, sim)
             
         except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror("错误", f"仿真失败: {str(e)}"))
-            self.root.after(0, lambda: self.status_var.set("仿真失败"))
+            print(f"\n\u9519\u8bef: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            sys.stdout = old_stdout
+            self.root.after(0, lambda: self.run_btn.config(
+                state=tk.NORMAL, text="\u8fd0\u884c\u6a21\u62df"
+            ))
+    
+    def _show_layout_in_main_thread(self, sim):
+        """在主线程中显示布局图"""
+        try:
+            import matplotlib.pyplot as plt
+            import matplotlib as mpl
+            from matplotlib.patches import Rectangle
+            from collections import defaultdict
+            
+            # 解析 expert IDs
+            expert_ids_str = self.expert_ids_var.get()
+            expert_ids = [int(x.strip()) for x in expert_ids_str.split(',') if x.strip()]
+            
+            part_order = ["gate", "up", "down"]
+            title = f"Expert Layout ({self.layout_var.get()})"
+            max_pages = 64  # 限制显示页数，避免图表过大
+            
+            C = sim.geo.channels
+            P = sim.geo.planes_per_channel
+            
+            all_slices = [
+                slc for eid in expert_ids
+                for slc in sim._ep_map[eid].all_slices()
+                if slc.part in part_order
+            ]
+            if not all_slices:
+                print("[visualize_layout] no data.")
+                return
+            
+            max_page_seen = max(slc.page for slc in all_slices)
+            need_pages = max_page_seen + 1
+            max_pages = max(1, min(max_pages, need_pages)) if max_pages else need_pages
+            
+            part_colors = {
+                "gate": mpl.colors.to_rgba("#1f77b4"),
+                "up":   mpl.colors.to_rgba("#ff7f0e"),
+                "down": mpl.colors.to_rgba("#2ca02c"),
+            }
+            annotate_fontsize = max(5, min(8, int(60 / max(max_pages, P))))
+            figsize = (max(10, C * max(2.5, P * 0.5)), max(5, max_pages * 0.5 + 1.5))
+            
+            fig, axes = plt.subplots(1, C, figsize=figsize, sharey=True, squeeze=False)
+            axes = axes[0]
+            
+            for ch in range(C):
+                ax = axes[ch]
+                for pl in range(P):
+                    for pg in range(max_pages):
+                        ax.add_patch(Rectangle((pl, pg), 1, 1,
+                            linewidth=0.4, edgecolor="#aaaaaa", facecolor="white", zorder=0))
+                
+                cell = defaultdict(list)
+                for eid in expert_ids:
+                    for slc in sim._ep_map[eid].all_slices():
+                        if slc.ch == ch and slc.part in part_order and slc.page < max_pages:
+                            entry = (slc.part, eid)
+                            if entry not in cell[(slc.pl, slc.page)]:
+                                cell[(slc.pl, slc.page)].append(entry)
+                
+                for (pl, pg), entries in cell.items():
+                    n = len(entries)
+                    w = 1.0 / n
+                    for i, (part, eid) in enumerate(entries):
+                        color = list(part_colors.get(part, (0.5, 0.5, 0.5, 1.0)))
+                        ax.add_patch(Rectangle((pl + i * w, pg), w, 1,
+                            linewidth=0, facecolor=color, alpha=0.85, zorder=1))
+                        ax.annotate(f"E{eid}\n{part[:1].upper()}",
+                            xy=(pl + (i + 0.5) * w, pg + 0.5), ha="center", va="center",
+                            fontsize=annotate_fontsize, color="black", clip_on=True, zorder=2)
+                
+                ax.set_title(f"CH{ch}", fontsize=11)
+                ax.set_xlim(0, P)
+                ax.set_ylim(0, max_pages)
+                ax.set_xticks([i + 0.5 for i in range(P)])
+                ax.set_xticklabels([f"PL{i}" for i in range(P)], fontsize=9)
+                ax.set_xlabel("Plane", fontsize=8)
+                ax.invert_yaxis()
+                ax.set_yticks(range(max_pages))
+                ax.set_yticklabels([str(pg) for pg in range(max_pages)], fontsize=7)
+            
+            axes[0].set_ylabel("Page(row)", fontsize=10)
+            handles = [mpl.patches.Patch(color=part_colors[p], label=p) for p in ("gate", "up", "down")]
+            fig.legend(handles=handles, loc="lower center", ncol=3,
+                       fontsize=9, bbox_to_anchor=(0.5, 0.0))
+            fig.suptitle(title or "Layout", fontsize=12)
+            plt.tight_layout(rect=[0, 0.06, 1, 1])
+            plt.show()  # block=True，但这是在after回调中，不会阻塞GUI
+        except Exception as e:
+            print(f"\n\u56fe\u8868\u663e\u793a\u9519\u8bef: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def run_topk_analysis(self):
+        """运行 TopK 分析"""
+        self.topk_run_btn.config(state=tk.DISABLED, text="\u5206\u6790\u4e2d...")
+        self.topk_output_text.delete(1.0, tk.END)
+        
+        thread = threading.Thread(target=self._do_topk_analysis, daemon=True)
+        thread.start()
+    
+    def _do_topk_analysis(self):
+        """实际 TopK 分析逻辑"""
+        try:
+            # 捕获输出
+            old_stdout = sys.stdout
+            sys.stdout = RedirectText(self.topk_output_text)
+            
+            # 创建几何结构和布局
+            geo = self._create_geometry()
+            
+            # 使用 TopK 标签页的参数
+            layout = self.topk_layout_var.get()
+            num_experts = self.topk_num_experts_var.get()
+            topk = self.topk_k_var.get()
+            n_trials = self.n_trials_var.get()
+            # MoE 模型参数
+            gate_bytes = self.topk_gate_bytes_var.get()
+            up_bytes = self.topk_up_bytes_var.get()
+            down_bytes = self.topk_down_bytes_var.get()
+            
+            if layout == "ch_first":
+                sim = place_experts_page_rr(geo, num_experts, gate_bytes, up_bytes, down_bytes)
+            else:
+                sim = place_experts_page_rr_pl_first(geo, num_experts, gate_bytes, up_bytes, down_bytes)
+            
+            # 硬件参数
+            bw = self.bw_var.get() * 1e9  # 单通道
+            tR = self.tr_var.get() * 1e-6
+            
+            # 打印参数信息
+            # 参数标题已删除
+            print(f"\u786c\u4ef6\u914d\u7f6e:")
+            print(f"  Channels: {geo.channels}, Planes/Channel: {geo.planes_per_channel}")
+            print(f"  Page Size: {geo.page_size_bytes / 1024:.0f} KB")
+            print(f"  \u5355\u901a\u9053\u5e26\u5bbd: {bw/1e9:.2f} GB/s")
+            print(f"  \u603b\u5e26\u5bbd: {bw * geo.channels / 1e9:.2f} GB/s")
+            print(f"  tR: {self.tr_var.get()} us")
+            print(f"\nMoE \u6a21\u578b\u53c2\u6570:")
+            print(f"  Expert \u603b\u6570: {num_experts}")
+            print(f"  Gate: {gate_bytes} bytes")
+            print(f"  Up: {up_bytes} bytes")
+            print(f"  Down: {down_bytes} bytes")
+            print(f"\n\u5206\u6790\u53c2\u6570:")
+            print(f"  TopK: {topk}")
+            print(f"  \u5b9e\u9a8c\u6b21\u6570: {n_trials}")
+            print(f"  \u5e03\u5c40: {layout}")
+            print("=" * 110)
+            print()
+            
+            # 运行 TopK 分析
+            comparison_text, bw_analysis_text, compare_results = run_topk_analysis(
+                sim,
+                bw_total_Bps=bw,
+                tR_sec=tR,
+                num_experts=num_experts,
+                topk=topk,
+                n_trials=n_trials
+            )
+            
+            # 输出结果
+            print(comparison_text)
+            print("\n")
+            print(bw_analysis_text)
+            
+            # 保存图表结果供后续显示
+            self.last_compare_results = compare_results
+            
+            # 如果需要显示图表
+            if self.topk_show_plot_var.get() and matplotlib_available:
+                self.root.after(100, self._show_topk_plot_in_main_thread, compare_results, bw, sim.geo.channels)
+            
+        except Exception as e:
+            print(f"\n\u9519\u8bef: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            sys.stdout = old_stdout
+            self.root.after(0, lambda: self.topk_run_btn.config(
+                state=tk.NORMAL, text="\u8fd0\u884c TopK \u5206\u6790"
+            ))
+    
+    def _show_topk_plot_in_main_thread(self, compare_results, bw, channels):
+        """在主线程中显示 TopK 分析图表"""
+        try:
+            plot_prefetch_comparison(compare_results, bw_total_Bps=bw, channels=channels)
+        except Exception as e:
+            print(f"\n\u56fe\u8868\u663e\u793a\u9519\u8bef: {e}")
 
 
-def main_gui():
-    """GUI 入口"""
+def main():
     root = tk.Tk()
     app = NandSimulatorGUI(root)
     root.mainloop()
 
 
 if __name__ == "__main__":
-    main_gui()
+    main()
