@@ -769,18 +769,39 @@ def print_sequential_latency_table(
         # Quiet模式：直接返回结果，不打印表格
         return r
 
+    # ANSI 颜色代码
+    C_RESET = '\033[0m'
+    C_BOLD = '\033[1m'
+    C_DIM = '\033[2m'
+    C_RED = '\033[91m'      # tR
+    C_GREEN = '\033[92m'    # tX
+    C_YELLOW = '\033[93m'   # saved
+    C_BLUE = '\033[94m'     # hid/down
+    C_MAGENTA = '\033[95m'  # inter
+    C_CYAN = '\033[96m'     # prefetch/intra/up
+    C_WHITE = '\033[97m'    # highlight
+    C_GRAY = '\033[90m'     # dim text
+    
+    def fmt_colored(val, color, width=8, fmt='.2f'):
+        """带颜色的数值格式化，0值显示为灰色"""
+        if val == 0 or val == 0.0:
+            return f"{C_GRAY}{0:>{width}{fmt}}{C_RESET}"
+        return f"{color}{val:>{width}{fmt}}{C_RESET}"
+
     print(f"\n{'='*W}")
     print(f"  Sequential Read : experts={expert_ids}")
-    print(f"  tR={tR_us:.1f}us  tX={tX_us:.4f}us  "
+    print(f"  {C_RED}tR={tR_us:.1f}us{C_RESET}  {C_GREEN}tX={tX_us:.4f}us{C_RESET}  "
           f"intra={'ON' if intra_expert_cache else 'OFF'}  "
           f"inter={'ON' if inter_expert_cache else 'OFF'}")
     print(f"{'='*W}")
-    print(f"\n  [Step Detail]")
-    # ↓ 新增 hid(us) 列，放在 tR 和 tX 之间
-    print(f"  {'EID':>4} {'PART':>6}  "
-          f"{'crit_ch':>7} {'tR(us)':>7} {'hid(us)':>8} {'tX(us)':>8} "
-          f"{'c_pl':>5} {'saved(us)':>9} {'time(us)':>9}  note")
-    print(f"  {'-'*110}")
+    print(f"\n  {C_BOLD}[Step Detail]{C_RESET}")
+    # 表头 - 使用简单ASCII
+    header = (f"  {'EID':>4} {'PART':>6} | "
+              f"{C_RED}{'tR(us)':>7}{C_RESET} {C_BLUE}{'hid(us)':>8}{C_RESET} | "
+              f"{C_GREEN}{'tX(us)':>8}{C_RESET} {C_YELLOW}{'saved(us)':>10}{C_RESET} | "
+              f"{'time(us)':>8} | Note")
+    print(header)
+    print(f"  {'-'*105}")
 
     steps    = [(eid, part) for eid in expert_ids for part in part_order]
     prev_eid = None
@@ -788,21 +809,39 @@ def print_sequential_latency_table(
 
     for i, (eid, part) in enumerate(steps):
         st    = r["step_stats"][(eid, part)]
-        notes = []
+        
+        # 构建 notes 带颜色
+        notes_parts = []
         if prev_eid is not None and eid != prev_eid:
-            notes.append(f"<-- inter(E{prev_eid}→E{eid})")
+            notes_parts.append(f"{C_MAGENTA}<= inter(E{prev_eid}->E{eid}){C_RESET}")
         if st["cached_planes"] > 0:
             src = "intra" if (prev_eid == eid) else "inter"
-            notes.append(f"[prefetch({src}):{st['cached_planes']}pl]")
+            color = C_CYAN if src == "intra" else C_MAGENTA
+            notes_parts.append(f"{color}[prefetch:{st['cached_planes']}pl]{C_RESET}")
         if st["tr_sec"] == 0.0 and st["crit_planes"] > 0:
-            notes.append("[tR saved]")
+            notes_parts.append(f"{C_GREEN}[tR saved]{C_RESET}")
+        
+        notes_str = ' '.join(notes_parts) if notes_parts else f"{C_GRAY}-.{C_RESET}"
 
-        # ↓ 新增 hid_sec 列打印
-        print(f"  {eid:>4} {part:>6}  "
-              f"{str(st['crit_ch']):>7} {st['tr_sec']*1e6:>7.2f} {st['hid_sec']*1e6:>8.2f} "
-              f"{st['crit_tx_sec']*1e6:>8.2f} "
-              f"{st['cached_planes']:>5} {st['saved_sec']*1e6:>9.2f} {st['time_sec']*1e6:>9.2f}  "
-              f"{'  '.join(notes)}")
+        # 格式化数据行 - 带颜色
+        tr_str = fmt_colored(st['tr_sec']*1e6, C_RED, 7)
+        hid_str = fmt_colored(st['hid_sec']*1e6, C_BLUE, 8)
+        tx_str = fmt_colored(st['crit_tx_sec']*1e6, C_GREEN, 8)
+        saved_str = fmt_colored(st['saved_sec']*1e6, C_YELLOW, 10)
+        time_str = f"{st['time_sec']*1e6:>8.2f}"
+        
+        # 每3行（每个expert的第一行）高亮EID
+        is_first_step = (i % len(part_order) == 0)
+        eid_str = f"{C_BOLD}{eid:>4}{C_RESET}" if is_first_step else f"{eid:>4}"
+        
+        # PART颜色
+        part_colors = {'gate': C_RED, 'up': C_CYAN, 'down': C_BLUE}
+        part_str = f"{part_colors.get(part, C_WHITE)}{part:>6}{C_RESET}"
+        
+        print(f"  {eid_str} {part_str} | "
+              f"{tr_str} {hid_str} | "
+              f"{tx_str} {saved_str} | "
+              f"{time_str} | {notes_str}")
 
         rows_csv.append([eid, part,
                          f"{st['tr_sec']*1e6:.2f}", f"{st['hid_sec']*1e6:.2f}",   # ↓ 新增 hid
