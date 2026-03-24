@@ -112,21 +112,21 @@ class NandSimulatorGUI:
         outer_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
         outer_frame.pack_propagate(False)
         
-        # 创建滚动条容器（优雅的浅灰色背景）
-        scrollbar_container = tk.Frame(outer_frame, bg='#E8E8E8', width=18)
+        # 创建滚动条容器（浅蓝色背景）
+        scrollbar_container = tk.Frame(outer_frame, bg='#E3F2FD', width=16)
         scrollbar_container.pack(side=tk.RIGHT, fill=tk.Y)
         scrollbar_container.pack_propagate(False)
         
-        # 创建优雅风格的滚动条
+        # 创建蓝色扁平化滚动条
         scrollbar = tk.Scrollbar(scrollbar_container, orient="vertical",
-                                  width=14,
-                                  bg='#A0A0A0',           # 柔和的灰色滑块
-                                  activebackground='#808080',  # 悬停时稍深
-                                  troughcolor='#F5F5F5',   # 极浅的灰白轨道
+                                  width=12,
+                                  bg='#42A5F5',           # 明亮蓝色滑块
+                                  activebackground='#1E88E5',  # 悬停时深蓝
+                                  troughcolor='#E3F2FD',   # 浅蓝轨道
                                   relief=tk.FLAT,          # 扁平化设计
                                   bd=0,                    # 无边框
                                   highlightthickness=0)
-        scrollbar.pack(fill=tk.Y, expand=True, padx=2, pady=4)
+        scrollbar.pack(fill=tk.Y, expand=True, padx=2, pady=2)
         
         # 创建内容画布
         canvas = tk.Canvas(outer_frame, bg=self.colors['frame'], 
@@ -169,21 +169,21 @@ class NandSimulatorGUI:
         text_frame = tk.Frame(container, bg=self.colors['frame'])
         text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        # 创建优雅滚动条容器
-        scrollbar_frame = tk.Frame(text_frame, bg='#E8E8E8', width=18)
+        # 创建蓝色扁平化滚动条容器
+        scrollbar_frame = tk.Frame(text_frame, bg='#E3F2FD', width=16)
         scrollbar_frame.pack(side=tk.RIGHT, fill=tk.Y)
         scrollbar_frame.pack_propagate(False)
         
-        # 创建优雅风格的滚动条
+        # 创建蓝色扁平化滚动条
         scrollbar = tk.Scrollbar(scrollbar_frame, orient="vertical",
-                                  width=14,
-                                  bg='#A0A0A0',
-                                  activebackground='#808080',
-                                  troughcolor='#F5F5F5',
+                                  width=12,
+                                  bg='#42A5F5',
+                                  activebackground='#1E88E5',
+                                  troughcolor='#E3F2FD',
                                   relief=tk.FLAT,
                                   bd=0,
                                   highlightthickness=0)
-        scrollbar.pack(fill=tk.Y, expand=True, padx=2, pady=4)
+        scrollbar.pack(fill=tk.Y, expand=True, padx=2, pady=2)
         
         # 创建文本区域
         text_widget = tk.Text(text_frame, wrap=tk.NONE, 
