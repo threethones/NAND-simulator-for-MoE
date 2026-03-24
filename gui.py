@@ -29,7 +29,7 @@ try:
 except ImportError:
     pass
 
-# 导入 TopK 分析模块
+# 导入专家命中仿真模块
 from layout_analyse import run_topk_analysis, plot_prefetch_comparison
 
 
@@ -52,7 +52,25 @@ class NandSimulatorGUI:
         self.root = root
         self.root.title("NAND MoE Simulator")
         self.root.geometry("1200x900")
-        self.root.minsize(1000, 700)
+        self.root.minsize(800, 600)
+        
+        # 预设配置
+        self.presets = {
+            "\u4f4e\u914dNAND": {
+                "channels": 4,
+                "planes": 4,
+                "page_size": 16,
+                "bw": 1.75,
+                "tr": 50,
+            },
+            "\u9ad8\u914dNAND": {
+                "channels": 8,
+                "planes": 8,
+                "page_size": 16,
+                "bw": 3.75,
+                "tr": 22,
+            },
+        }
         
         # 界面颜色配置
         self.colors = {
@@ -74,13 +92,47 @@ class NandSimulatorGUI:
         self.sim_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.sim_frame, text='\u4e3b\u6a21\u62df')
         
-        # TopK 分析标签页
+        # 专家命中仿真标签页
         self.topk_frame = ttk.Frame(self.notebook)
-        self.notebook.add(self.topk_frame, text='TopK \u5206\u6790')
+        self.notebook.add(self.topk_frame, text='\u4e13\u5bb6\u547d\u4e2d\u4eff\u771f')
         
         # 初始化两个标签页
         self._init_sim_tab()
         self._init_topk_tab()
+    
+    def _create_scrollable_left_panel(self, parent):
+        """创建带滚动条的左侧面板"""
+        # 创建 Canvas 和滚动条容器（固定宽度200像素）
+        container = tk.Frame(parent, bg=self.colors['frame'], bd=2, relief=tk.GROOVE, width=200)
+        container.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        container.pack_propagate(False)  # 禁止子控件改变容器大小
+        
+        # 创建 Canvas
+        canvas = tk.Canvas(container, bg=self.colors['frame'], highlightthickness=0)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # 创建滚动条
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # 创建内部框架存放控件
+        left_panel = tk.Frame(canvas, bg=self.colors['frame'])
+        canvas.create_window((0, 0), window=left_panel, anchor="nw")
+        
+        # 绑定事件更新滚动区域
+        def on_frame_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        left_panel.bind("<Configure>", on_frame_configure)
+        
+        # 绑定鼠标滚轮（只在 Canvas 区域内有效）
+        def on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind("<MouseWheel>", on_mousewheel)
+        # 也绑定到内部框架
+        left_panel.bind("<MouseWheel>", on_mousewheel)
+        
+        return left_panel, canvas
     
     def _init_sim_tab(self):
         """初始化主模拟标签页"""
@@ -88,14 +140,19 @@ class NandSimulatorGUI:
         main_container = tk.Frame(self.sim_frame, bg=self.colors['bg'])
         main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # 左侧：参数输入面板
-        left_panel = tk.Frame(main_container, bg=self.colors['frame'], bd=2, relief=tk.GROOVE)
-        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        # 左侧：带滚动条的参数输入面板
+        left_panel, _ = self._create_scrollable_left_panel(main_container)
         
         # 硬件配置参数
         hw_frame = tk.LabelFrame(left_panel, text="\u786c\u4ef6\u914d\u7f6e\u53c2\u6570", 
-                                  bg=self.colors['frame'], padx=10, pady=10)
-        hw_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
+                                  bg=self.colors['frame'], padx=8, pady=8)
+        hw_frame.pack(fill=tk.X, padx=5, pady=(5, 3))
+        
+        # 加载预设按钮
+        tk.Button(hw_frame, text="\u52a0\u8f7d\u9884\u8bbe\u914d\u7f6e", 
+                  command=self._show_preset_menu,
+                  bg=self.colors['accent'], fg='white',
+                  font=('Microsoft YaHei', 9)).pack(fill=tk.X, pady=(0, 8))
         
         # 通道数
         tk.Label(hw_frame, text="\u901a\u9053\u6570 (Channels):", 
@@ -120,8 +177,8 @@ class NandSimulatorGUI:
         
         # 硬件性能参数
         perf_frame = tk.LabelFrame(left_panel, text="\u786c\u4ef6\u6027\u80fd\u53c2\u6570", 
-                                   bg=self.colors['frame'], padx=10, pady=10)
-        perf_frame.pack(fill=tk.X, padx=10, pady=5)
+                                   bg=self.colors['frame'], padx=8, pady=8)
+        perf_frame.pack(fill=tk.X, padx=5, pady=3)
         
         # 单通道带宽
         tk.Label(perf_frame, text="\u5355\u901a\u9053\u5e26\u5bbd (GB/s):", 
@@ -137,8 +194,8 @@ class NandSimulatorGUI:
         
         # MoE 模型参数
         moe_frame = tk.LabelFrame(left_panel, text="MoE \u6a21\u578b\u53c2\u6570", 
-                                  bg=self.colors['frame'], padx=10, pady=10)
-        moe_frame.pack(fill=tk.X, padx=10, pady=5)
+                                  bg=self.colors['frame'], padx=8, pady=8)
+        moe_frame.pack(fill=tk.X, padx=5, pady=3)
         
         # Expert 数量
         tk.Label(moe_frame, text="Expert \u603b\u6570:", 
@@ -167,8 +224,8 @@ class NandSimulatorGUI:
         
         # TopK 和 Expert 选择
         topk_frame = tk.LabelFrame(left_panel, text="\u4e13\u5bb6\u547d\u4e2d\u914d\u7f6e", 
-                                   bg=self.colors['frame'], padx=10, pady=10)
-        topk_frame.pack(fill=tk.X, padx=10, pady=5)
+                                   bg=self.colors['frame'], padx=8, pady=8)
+        topk_frame.pack(fill=tk.X, padx=5, pady=3)
         
         tk.Label(topk_frame, text="TopK (\u9009\u62e9 Expert \u6570):", 
                  bg=self.colors['frame']).pack(anchor=tk.W)
@@ -183,8 +240,8 @@ class NandSimulatorGUI:
         
         # 布局选择
         layout_frame = tk.LabelFrame(left_panel, text="\u5e03\u5c40\u9009\u62e9", 
-                                     bg=self.colors['frame'], padx=10, pady=10)
-        layout_frame.pack(fill=tk.X, padx=10, pady=5)
+                                     bg=self.colors['frame'], padx=8, pady=8)
+        layout_frame.pack(fill=tk.X, padx=5, pady=3)
         
         self.layout_var = tk.StringVar(value="ch_first")
         tk.Radiobutton(layout_frame, text="CH-first (\u8df3\u8dc3SLC)", 
@@ -196,8 +253,8 @@ class NandSimulatorGUI:
         
         # 预取选项
         prefetch_frame = tk.LabelFrame(left_panel, text="\u9884\u53d6\u9009\u9879", 
-                                       bg=self.colors['frame'], padx=10, pady=10)
-        prefetch_frame.pack(fill=tk.X, padx=10, pady=5)
+                                       bg=self.colors['frame'], padx=8, pady=8)
+        prefetch_frame.pack(fill=tk.X, padx=5, pady=3)
         
         self.intra_var = tk.BooleanVar(value=True)
         self.inter_var = tk.BooleanVar(value=True)
@@ -210,16 +267,16 @@ class NandSimulatorGUI:
         self.run_btn = tk.Button(left_panel, text="\u8fd0\u884c\u6a21\u62df", 
                                   command=self.run_simulation,
                                   bg=self.colors['success'], fg='white',
-                                  font=('Microsoft YaHei', 12, 'bold'),
-                                  height=2)
-        self.run_btn.pack(fill=tk.X, padx=10, pady=10)
+                                  font=('Microsoft YaHei', 11, 'bold'),
+                                  height=1)
+        self.run_btn.pack(fill=tk.X, padx=5, pady=5)
         
         # 显示布局图选项
         self.show_plot_var = tk.BooleanVar(value=False)
         if matplotlib_available:
             tk.Checkbutton(left_panel, text="\u8fd0\u884c\u540e\u663e\u793a\u5e03\u5c40\u56fe", 
                           variable=self.show_plot_var, 
-                          bg=self.colors['frame']).pack(fill=tk.X, padx=10, pady=(0, 10))
+                          bg=self.colors['frame']).pack(fill=tk.X, padx=5, pady=(0, 5))
         
         # 右侧：输出显示面板
         right_panel = tk.Frame(main_container, bg=self.colors['frame'], bd=2, relief=tk.GROOVE)
@@ -237,19 +294,24 @@ class NandSimulatorGUI:
         self.output_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
     
     def _init_topk_tab(self):
-        """初始化 TopK 分析标签页"""
+        """初始化专家命中仿真标签页"""
         # 主容器
         main_container = tk.Frame(self.topk_frame, bg=self.colors['bg'])
         main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # 左侧：参数输入面板
-        left_panel = tk.Frame(main_container, bg=self.colors['frame'], bd=2, relief=tk.GROOVE)
-        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        # 左侧：带滚动条的参数输入面板
+        left_panel, _ = self._create_scrollable_left_panel(main_container)
         
         # 硬件配置参数（可编辑，与主标签页共享变量）
         hw_config_frame = tk.LabelFrame(left_panel, text="\u786c\u4ef6\u914d\u7f6e\u53c2\u6570", 
-                                         bg=self.colors['frame'], padx=10, pady=10)
-        hw_config_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
+                                         bg=self.colors['frame'], padx=8, pady=8)
+        hw_config_frame.pack(fill=tk.X, padx=5, pady=(5, 3))
+        
+        # 加载预设按钮
+        tk.Button(hw_config_frame, text="\u52a0\u8f7d\u9884\u8bbe\u914d\u7f6e", 
+                  command=self._show_preset_menu,
+                  bg=self.colors['accent'], fg='white',
+                  font=('Microsoft YaHei', 9)).pack(fill=tk.X, pady=(0, 8))
         
         # Channels
         tk.Label(hw_config_frame, text="\u901a\u9053\u6570 (Channels):", 
@@ -271,8 +333,8 @@ class NandSimulatorGUI:
         
         # 硬件性能参数（可编辑，与主标签页共享变量）
         hw_perf_frame = tk.LabelFrame(left_panel, text="\u786c\u4ef6\u6027\u80fd\u53c2\u6570", 
-                                       bg=self.colors['frame'], padx=10, pady=10)
-        hw_perf_frame.pack(fill=tk.X, padx=10, pady=5)
+                                       bg=self.colors['frame'], padx=8, pady=8)
+        hw_perf_frame.pack(fill=tk.X, padx=5, pady=3)
         
         # 单通道带宽
         tk.Label(hw_perf_frame, text="\u5355\u901a\u9053\u5e26\u5bbd (GB/s):", 
@@ -286,8 +348,8 @@ class NandSimulatorGUI:
         
         # MoE 模型参数
         moe_frame = tk.LabelFrame(left_panel, text="MoE \u6a21\u578b\u53c2\u6570", 
-                                  bg=self.colors['frame'], padx=10, pady=10)
-        moe_frame.pack(fill=tk.X, padx=10, pady=5)
+                                  bg=self.colors['frame'], padx=8, pady=8)
+        moe_frame.pack(fill=tk.X, padx=5, pady=3)
         
         # Expert 总数
         tk.Label(moe_frame, text="Expert \u603b\u6570:", 
@@ -316,8 +378,8 @@ class NandSimulatorGUI:
         
         # 分析参数
         params_frame = tk.LabelFrame(left_panel, text="\u5206\u6790\u53c2\u6570", 
-                                     bg=self.colors['frame'], padx=10, pady=10)
-        params_frame.pack(fill=tk.X, padx=10, pady=5)
+                                     bg=self.colors['frame'], padx=8, pady=8)
+        params_frame.pack(fill=tk.X, padx=5, pady=3)
         
         # TopK
         tk.Label(params_frame, text="TopK (\u6bcf\u6b21\u9009\u62e9 Expert \u6570):", 
@@ -345,19 +407,19 @@ class NandSimulatorGUI:
                        bg=self.colors['frame']).pack(anchor=tk.W)
         
         # 运行按钮
-        self.topk_run_btn = tk.Button(left_panel, text="\u8fd0\u884c TopK \u5206\u6790", 
+        self.topk_run_btn = tk.Button(left_panel, text="\u8fd0\u884c\u4e13\u5bb6\u547d\u4e2d\u4eff\u771f", 
                                        command=self.run_topk_analysis,
                                        bg=self.colors['accent'], fg='white',
-                                       font=('Microsoft YaHei', 12, 'bold'),
-                                       height=2)
-        self.topk_run_btn.pack(fill=tk.X, padx=10, pady=10)
+                                       font=('Microsoft YaHei', 11, 'bold'),
+                                       height=1)
+        self.topk_run_btn.pack(fill=tk.X, padx=5, pady=5)
         
         # 显示图表选项
         self.topk_show_plot_var = tk.BooleanVar(value=True)
         if matplotlib_available:
             tk.Checkbutton(left_panel, text="\u663e\u793a\u5206\u6790\u56fe\u8868", 
                           variable=self.topk_show_plot_var, 
-                          bg=self.colors['frame']).pack(fill=tk.X, padx=10, pady=(0, 10))
+                          bg=self.colors['frame']).pack(fill=tk.X, padx=5, pady=(0, 5))
         
         # 右侧：结果显示面板
         right_panel = tk.Frame(main_container, bg=self.colors['frame'], bd=2, relief=tk.GROOVE)
@@ -373,6 +435,29 @@ class NandSimulatorGUI:
             width=120, height=40
         )
         self.topk_output_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+    
+    def _show_preset_menu(self):
+        """显示预设菜单"""
+        menu = tk.Menu(self.root, tearoff=0)
+        for name in self.presets:
+            menu.add_command(label=name, command=lambda n=name: self._load_preset(n))
+        menu.post(self.root.winfo_pointerx(), self.root.winfo_pointery())
+    
+    def _load_preset(self, preset_name):
+        """加载预设配置"""
+        preset = self.presets[preset_name]
+        self.channels_var.set(preset['channels'])
+        self.planes_var.set(preset['planes'])
+        self.page_size_var.set(preset['page_size'])
+        self.bw_var.set(preset['bw'])
+        self.tr_var.set(preset['tr'])
+        
+        # 更新输出
+        self.output_text.insert(tk.END, f"\n[\u9884\u8bbe] \u5df2\u52a0\u8f7d: {preset_name}\n")
+        self.output_text.insert(tk.END, f"  Channels: {preset['channels']}, Planes: {preset['planes']}\n")
+        self.output_text.insert(tk.END, f"  Page Size: {preset['page_size']} KB\n")
+        self.output_text.insert(tk.END, f"  BW: {preset['bw']} GB/s, tR: {preset['tr']} us\n")
+        self.output_text.see(tk.END)
     
     def _create_geometry(self):
         """创建 NAND 几何结构"""
@@ -585,7 +670,7 @@ class NandSimulatorGUI:
             traceback.print_exc()
     
     def run_topk_analysis(self):
-        """运行 TopK 分析"""
+        """运行专家命中仿真"""
         self.topk_run_btn.config(state=tk.DISABLED, text="\u5206\u6790\u4e2d...")
         self.topk_output_text.delete(1.0, tk.END)
         
@@ -593,7 +678,7 @@ class NandSimulatorGUI:
         thread.start()
     
     def _do_topk_analysis(self):
-        """实际 TopK 分析逻辑"""
+        """实际专家命中仿真逻辑"""
         try:
             # 捕获输出
             old_stdout = sys.stdout
@@ -641,7 +726,7 @@ class NandSimulatorGUI:
             print("=" * 110)
             print()
             
-            # 运行 TopK 分析
+            # 运行专家命中仿真
             comparison_text, bw_analysis_text, compare_results = run_topk_analysis(
                 sim,
                 bw_total_Bps=bw,
@@ -670,11 +755,11 @@ class NandSimulatorGUI:
         finally:
             sys.stdout = old_stdout
             self.root.after(0, lambda: self.topk_run_btn.config(
-                state=tk.NORMAL, text="\u8fd0\u884c TopK \u5206\u6790"
+                state=tk.NORMAL, text="\u8fd0\u884c\u4e13\u5bb6\u547d\u4e2d\u4eff\u771f"
             ))
     
     def _show_topk_plot_in_main_thread(self, compare_results, bw, channels):
-        """在主线程中显示 TopK 分析图表"""
+        """在主线程中显示专家命中仿真图表"""
         try:
             plot_prefetch_comparison(compare_results, bw_total_Bps=bw, channels=channels)
         except Exception as e:
