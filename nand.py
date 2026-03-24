@@ -187,6 +187,91 @@ def place_experts_page_rr_pl_first(
 
 
 # ================================================================== #
+#  布局函数：TLC（3页Tier优化）                                        #
+# ================================================================== #
+
+def place_experts_tlc(
+    geo: NandGeometry,
+    num_experts: int,
+    gate_bytes: int,
+    up_bytes: int,
+    down_bytes: int,
+) -> "NandSimulator":
+    """
+    TLC 布局：每 3 页（一个 Tier 组）按 Plane 递增填满，再切换 Channel。
+    
+    填充顺序：
+      CH0/PL0/Page0 → CH0/PL0/Page1 → CH0/PL0/Page2  (3页tier组)
+      → CH0/PL1/Page0 → CH0/PL1/Page1 → CH0/PL1/Page2
+      → ... (填完 CH0 所有 Plane)
+      → CH1/PL0/Page0 → CH1/PL0/Page1 → CH1/PL0/Page2...
+    
+    优势：利用 TLC 3-page tier 特性，gate/up/down 更可能落在同一 Plane 的连续 3 页，
+          实现 intra-expert 预取最大化。
+    """
+    C, P, S = geo.channels, geo.planes_per_channel, geo.page_size_bytes
+    TIER_SIZE = 3  # TLC: 3 pages per tier
+
+    def map_global_to_phy(g: int):
+        in_off = g % S
+        k = g // S
+        
+        # 将全局页索引转换为 (tier组内页, tier组号)
+        tier_page = k % TIER_SIZE  # 0, 1, 2 within tier
+        tier_idx = k // TIER_SIZE  # which tier
+        
+        # 每个 tier 组内按 Plane 递增
+        # tier_idx 映射到 (ch, pl)
+        # 先填满 CH0 的所有 Plane，每个 Plane 3 页
+        planes_per_ch = P
+        tier_in_channel = tier_idx % (planes_per_ch * TIER_SIZE)
+        ch = tier_idx // (planes_per_ch * TIER_SIZE)
+        
+        # 在 Channel 内：pl 递增，每个 pl 占 3 个 tier 位置
+        pl = (tier_in_channel // TIER_SIZE) % planes_per_ch
+        # page = tier_page + 3 * (tier_in_channel // 3) 的变体
+        # 实际上 page 就是 tier_in_channel 的映射
+        page = tier_in_channel
+        
+        return ch, pl, page, in_off
+
+    placements: List[ExpertPlacement] = []
+    global_ptr = 0
+
+    for eid in range(num_experts):
+        ep = ExpertPlacement(
+            expert_id=eid,
+            gate_bytes=gate_bytes, up_bytes=up_bytes, down_bytes=down_bytes,
+            page_size_bytes=S,
+        )
+        write_map: Dict[Tuple[int, int, int], PageWrite] = {}
+
+        for part_name, part_bytes in [("gate", gate_bytes), ("up", up_bytes), ("down", down_bytes)]:
+            remaining = part_bytes
+            while remaining > 0:
+                g = global_ptr
+                ch, pl, page, page_off = map_global_to_phy(g)
+                chunk = min(S - page_off, remaining)
+                key = (ch, pl, page)
+                if key not in write_map:
+                    pw = PageWrite(expert_id=eid, write_index=len(write_map),
+                                   ch=ch, pl=pl, size_bytes=S)
+                    write_map[key] = pw
+                    ep.writes.append(pw)
+                write_map[key].slices.append(PageSlice(
+                    ch=ch, pl=pl, page=page,
+                    offset=page_off, length=chunk,
+                    part=part_name, expert_id=eid,
+                ))
+                global_ptr += chunk
+                remaining -= chunk
+
+        placements.append(ep)
+
+    return NandSimulator(geo=geo, placements=placements)
+
+
+# ================================================================== #
 #  类型别名                                                            #
 # ================================================================== #
 

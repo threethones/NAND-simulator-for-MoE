@@ -15,6 +15,7 @@ import numpy as np
 # 导入核心模块
 from nand import (
     NandGeometry, place_experts_page_rr, place_experts_page_rr_pl_first,
+    place_experts_tlc,
     NandSimulator, estimate_sequential_latency
 )
 
@@ -250,6 +251,9 @@ class NandSimulatorGUI:
         tk.Radiobutton(layout_frame, text="PL-first (\u9ed8\u8ba4SLC)", 
                        variable=self.layout_var, value="pl_first",
                        bg=self.colors['frame']).pack(anchor=tk.W)
+        tk.Radiobutton(layout_frame, text="TLC (3\u9875Tier\u4f18\u5316)", 
+                       variable=self.layout_var, value="tlc",
+                       bg=self.colors['frame']).pack(anchor=tk.W)
         
         # 预取选项
         prefetch_frame = tk.LabelFrame(left_panel, text="\u9884\u53d6\u9009\u9879", 
@@ -405,6 +409,9 @@ class NandSimulatorGUI:
         tk.Radiobutton(params_frame, text="PL-first (\u9ed8\u8ba4SLC)", 
                        variable=self.topk_layout_var, value="pl_first",
                        bg=self.colors['frame']).pack(anchor=tk.W)
+        tk.Radiobutton(params_frame, text="TLC (3\u9875Tier\u4f18\u5316)", 
+                       variable=self.topk_layout_var, value="tlc",
+                       bg=self.colors['frame']).pack(anchor=tk.W)
         
         # 运行按钮
         self.topk_run_btn = tk.Button(left_panel, text="\u8fd0\u884c\u4e13\u5bb6\u547d\u4e2d\u4eff\u771f", 
@@ -479,8 +486,16 @@ class NandSimulatorGUI:
                 up_bytes=self.up_bytes_var.get(),
                 down_bytes=self.down_bytes_var.get()
             )
-        else:
+        elif layout == "pl_first":
             return place_experts_page_rr_pl_first(
+                geo,
+                num_experts=self.num_experts_var.get(),
+                gate_bytes=self.gate_bytes_var.get(),
+                up_bytes=self.up_bytes_var.get(),
+                down_bytes=self.down_bytes_var.get()
+            )
+        else:  # tlc
+            return place_experts_tlc(
                 geo,
                 num_experts=self.num_experts_var.get(),
                 gate_bytes=self.gate_bytes_var.get(),
@@ -699,8 +714,10 @@ class NandSimulatorGUI:
             
             if layout == "ch_first":
                 sim = place_experts_page_rr(geo, num_experts, gate_bytes, up_bytes, down_bytes)
-            else:
+            elif layout == "pl_first":
                 sim = place_experts_page_rr_pl_first(geo, num_experts, gate_bytes, up_bytes, down_bytes)
+            else:  # tlc
+                sim = place_experts_tlc(geo, num_experts, gate_bytes, up_bytes, down_bytes)
             
             # 硬件参数
             bw = self.bw_var.get() * 1e9  # 单通道
