@@ -116,9 +116,14 @@ class NandSimulatorGUI:
         canvas = tk.Canvas(container, bg=self.colors['frame'], highlightthickness=0)
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
-        # 创建滚动条
-        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        # 创建明显的滚动条（使用 tk.Scrollbar 而不是 ttk.Scrollbar 以便自定义样式）
+        scrollbar = tk.Scrollbar(container, orient="vertical", command=canvas.yview,
+                                  width=20,  # 更宽的滚动条
+                                  bg='#cccccc',  # 背景色
+                                  troughcolor='#f0f0f0',  # 槽颜色
+                                  highlightthickness=0,
+                                  relief=tk.RAISED)  # 凸起效果
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(2, 0))
         canvas.configure(yscrollcommand=scrollbar.set)
         
         # 创建内部框架存放控件
