@@ -104,8 +104,8 @@ class NandSimulatorGUI:
     
     def _create_scrollable_left_panel(self, parent):
         """创建带滚动条的左侧面板"""
-        # 创建 Canvas 和滚动条容器（固定宽度200像素）
-        container = tk.Frame(parent, bg=self.colors['frame'], bd=2, relief=tk.GROOVE, width=200)
+        # 创建 Canvas 和滚动条容器（固定宽度240像素，容纳长标签）
+        container = tk.Frame(parent, bg=self.colors['frame'], bd=2, relief=tk.GROOVE, width=240)
         container.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
         container.pack_propagate(False)  # 禁止子控件改变容器大小
         
