@@ -16,7 +16,8 @@ import numpy as np
 from nand import (
     NandGeometry, place_experts_page_rr, place_experts_page_rr_pl_first,
     place_experts_tlc,
-    NandSimulator, estimate_sequential_latency
+    NandSimulator, estimate_sequential_latency,
+    parse_expert_ids
 )
 
 # 尝试导入 matplotlib
@@ -234,7 +235,7 @@ class NandSimulatorGUI:
         tk.Spinbox(topk_frame, from_=1, to=50, textvariable=self.topk_var, 
                    width=15).pack(fill=tk.X, pady=(0, 5))
         
-        tk.Label(topk_frame, text="Expert IDs (\u7528\u9017\u53f7\u5206\u9694):", 
+        tk.Label(topk_frame, text="Expert IDs (\u7528\u9017\u53f7\u6216\u77ed\u6a2a\u7ebf\u5206\u9694):",
                  bg=self.colors['frame']).pack(anchor=tk.W)
         self.expert_ids_var = tk.StringVar(value="0,1,2,3,4,5,6,7,8,9")
         tk.Entry(topk_frame, textvariable=self.expert_ids_var, width=17).pack(fill=tk.X, pady=(0, 5))
@@ -522,9 +523,9 @@ class NandSimulatorGUI:
             geo = self._create_geometry()
             sim = self._place_experts(geo)
             
-            # 解析 expert IDs
+            # 解析 expert IDs（支持离散和连续格式，如 "0,1,2" 或 "0-9" 或 "0-3,5,7-9"）
             expert_ids_str = self.expert_ids_var.get()
-            expert_ids = [int(x.strip()) for x in expert_ids_str.split(',') if x.strip()]
+            expert_ids = parse_expert_ids(expert_ids_str)
             
             # 获取参数
             bw = self.bw_var.get() * 1e9  # 转换为 B/s

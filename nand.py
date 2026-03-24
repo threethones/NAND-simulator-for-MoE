@@ -855,6 +855,23 @@ def print_sequential_latency_table(
 
 
 # ================================================================== #
+#  辅助函数                                                            #
+# ================================================================== #
+
+def parse_expert_ids(value: str) -> List[int]:
+    """解析 expert_ids，支持 '0,1,2,3' 或 '0-5' 或 '0-3,5,7-9' 格式"""
+    result = []
+    for part in value.split(','):
+        part = part.strip()
+        if '-' in part:
+            start, end = part.split('-')
+            result.extend(range(int(start), int(end) + 1))
+        else:
+            result.append(int(part))
+    return result
+
+
+# ================================================================== #
 #  CLI 入口（简化版）                                                  #
 # ================================================================== #
 
