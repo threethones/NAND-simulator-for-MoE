@@ -595,6 +595,7 @@ class NandSimulatorGUI:
             import traceback
             traceback.print_exc()
         finally:
+            self.is_running = False
             sys.stdout = old_stdout
             self.root.after(0, lambda: self.run_btn.config(
                 state=tk.NORMAL, text="\u8fd0\u884c\u6a21\u62df"
@@ -812,6 +813,7 @@ class NandSimulatorGUI:
             import traceback
             traceback.print_exc()
         finally:
+            self.is_running = False
             sys.stdout = old_stdout
             self.root.after(0, lambda: self.topk_run_btn.config(
                 state=tk.NORMAL, text="\u8fd0\u884c\u4e13\u5bb6\u547d\u4e2d\u4eff\u771f"
