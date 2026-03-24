@@ -629,7 +629,7 @@ def plot_prefetch_comparison(
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
         print(f"[图表已保存] {save_path}")
-    plt.show()
+    plt.show(block=False)
 
 
 # ================================================================== #

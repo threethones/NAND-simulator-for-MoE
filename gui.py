@@ -56,6 +56,9 @@ class NandSimulatorGUI:
         self.root.geometry("1200x900")
         self.root.minsize(800, 600)
         
+        # 运行状态标志，防止同时运行多个任务
+        self.is_running = False
+        
         # 预设配置
         self.presets = {
             "\u4f4e\u914dNAND": {
@@ -506,6 +509,9 @@ class NandSimulatorGUI:
     
     def run_simulation(self):
         """运行模拟（在后台线程中）"""
+        if self.is_running:
+            return
+        self.is_running = True
         self.run_btn.config(state=tk.DISABLED, text="\u6a21\u62df\u8fd0\u884c\u4e2d...")
         self.output_text.delete(1.0, tk.END)
         
@@ -679,7 +685,7 @@ class NandSimulatorGUI:
                        fontsize=9, bbox_to_anchor=(0.5, 0.0))
             fig.suptitle(title or "Layout", fontsize=12)
             plt.tight_layout(rect=[0, 0.06, 1, 1])
-            plt.show()  # block=True，但这是在after回调中，不会阻塞GUI
+            plt.show(block=False)  # 非阻塞模式
         except Exception as e:
             print(f"\n\u56fe\u8868\u663e\u793a\u9519\u8bef: {e}")
             import traceback
@@ -687,6 +693,9 @@ class NandSimulatorGUI:
     
     def run_topk_analysis(self):
         """运行专家命中仿真"""
+        if self.is_running:
+            return
+        self.is_running = True
         self.topk_run_btn.config(state=tk.DISABLED, text="\u5206\u6790\u4e2d...")
         self.topk_output_text.delete(1.0, tk.END)
         
