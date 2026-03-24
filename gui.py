@@ -395,7 +395,7 @@ class NandSimulatorGUI:
         # 实验次数
         tk.Label(params_frame, text="\u5b9e\u9a8c\u6b21\u6570:", 
                  bg=self.colors['frame']).pack(anchor=tk.W)
-        self.n_trials_var = tk.IntVar(value=200)
+        self.n_trials_var = tk.IntVar(value=50)
         tk.Spinbox(params_frame, from_=10, to=1000, textvariable=self.n_trials_var, 
                    width=15).pack(fill=tk.X, pady=(0, 5))
         
