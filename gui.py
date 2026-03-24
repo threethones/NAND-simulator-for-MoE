@@ -245,13 +245,13 @@ class NandSimulatorGUI:
         layout_frame.pack(fill=tk.X, padx=5, pady=3)
         
         self.layout_var = tk.StringVar(value="ch_first")
-        tk.Radiobutton(layout_frame, text="CH-first (\u8df3\u8dc3SLC)", 
+        tk.Radiobutton(layout_frame, text="\u8df3\u8dc3SLC\uff08CH-first\uff09", 
                        variable=self.layout_var, value="ch_first",
                        bg=self.colors['frame']).pack(anchor=tk.W)
-        tk.Radiobutton(layout_frame, text="PL-first (\u9ed8\u8ba4SLC)", 
+        tk.Radiobutton(layout_frame, text="\u9ed8\u8ba4SLC\uff08PL-first\uff09", 
                        variable=self.layout_var, value="pl_first",
                        bg=self.colors['frame']).pack(anchor=tk.W)
-        tk.Radiobutton(layout_frame, text="TLC (3\u9875Tier\u4f18\u5316)", 
+        tk.Radiobutton(layout_frame, text="TLC", 
                        variable=self.layout_var, value="tlc",
                        bg=self.colors['frame']).pack(anchor=tk.W)
         
@@ -403,13 +403,13 @@ class NandSimulatorGUI:
         tk.Label(params_frame, text="\u5e03\u5c40\u9009\u62e9:", 
                  bg=self.colors['frame']).pack(anchor=tk.W)
         self.topk_layout_var = tk.StringVar(value="ch_first")
-        tk.Radiobutton(params_frame, text="CH-first (\u8df3\u8dc3SLC)", 
+        tk.Radiobutton(params_frame, text="\u8df3\u8dc3SLC\uff08CH-first\uff09", 
                        variable=self.topk_layout_var, value="ch_first",
                        bg=self.colors['frame']).pack(anchor=tk.W)
-        tk.Radiobutton(params_frame, text="PL-first (\u9ed8\u8ba4SLC)", 
+        tk.Radiobutton(params_frame, text="\u9ed8\u8ba4SLC\uff08PL-first\uff09", 
                        variable=self.topk_layout_var, value="pl_first",
                        bg=self.colors['frame']).pack(anchor=tk.W)
-        tk.Radiobutton(params_frame, text="TLC (3\u9875Tier\u4f18\u5316)", 
+        tk.Radiobutton(params_frame, text="TLC", 
                        variable=self.topk_layout_var, value="tlc",
                        bg=self.colors['frame']).pack(anchor=tk.W)
         

@@ -810,10 +810,6 @@ def print_sequential_latency_table(
     
     print(f"\n  [Bandwidth Analysis]")
     print(f"  {'='*50}")
-    print(f"  {'Per-CH BW':>20} : {bw_total_Bps/1e9:>8.3f} GB/s (理论单通道)")
-    print(f"  {'Total BW':>20} : {total_bw/1e9:>8.3f} GB/s ({sim.geo.channels}CH合计)")
-    print(f"  {'Effective BW':>20} : {effective_bw/1e9:>8.3f} GB/s (总实际带宽)")
-    print(f"  {'Per-CH Eff BW':>20} : {per_ch_effective_bw/1e9:>8.3f} GB/s (实际单通道)")
     print(f"  {'Utilization':>20} : {bw_utilization:>8.2f} % (总有效/总理论)")
     print(f"  {'-'*50}")
     
