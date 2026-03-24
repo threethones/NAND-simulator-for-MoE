@@ -449,7 +449,8 @@ def plot_prefetch_comparison(
     a_labels = [_MODE_LABELS[m] for m in access_modes]
 
     # ── 布局 ─────────────────────────────────────────────────────────
-    fig, axes = plt.subplots(2, 2, figsize=(16, 11))
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8))  # 默认大小适中，支持缩放
+    fig.canvas.manager.set_window_title('专家命中仿真结果 (支持鼠标滚轮缩放)')
     fig.suptitle("预取模式对比：三种访问模式 × 四种预取组合",
                  fontsize=14, fontweight="bold", y=0.98)
 

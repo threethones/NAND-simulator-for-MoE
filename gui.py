@@ -638,9 +638,17 @@ class NandSimulatorGUI:
                 "down": mpl.colors.to_rgba("#2ca02c"),
             }
             annotate_fontsize = max(5, min(8, int(60 / max(max_pages, P))))
-            figsize = (max(10, C * max(2.5, P * 0.5)), max(5, max_pages * 0.5 + 1.5))
+            
+            # 限制图表默认大小，使其适应屏幕，同时支持缩放
+            base_width = min(2.0, max(1.2, P * 0.25))  # 每Channel宽度
+            base_height = min(0.25, max(0.15, 8.0 / max_pages)) if max_pages > 0 else 0.2
+            figsize = (
+                min(16, max(8, C * base_width)),      # 总宽度限制在 8-16 英寸
+                min(10, max(6, max_pages * base_height))  # 总高度限制在 6-10 英寸
+            )
             
             fig, axes = plt.subplots(1, C, figsize=figsize, sharey=True, squeeze=False)
+            fig.canvas.manager.set_window_title('Expert Layout (支持鼠标滚轮缩放)')
             axes = axes[0]
             
             for ch in range(C):
