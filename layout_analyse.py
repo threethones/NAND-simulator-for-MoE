@@ -630,6 +630,25 @@ def plot_prefetch_comparison(
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
         print(f"[图表已保存] {save_path}")
+    
+    # 添加滚轮缩放功能
+    def on_scroll(event):
+        if event.inaxes is None:
+            return
+        ax = event.inaxes
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        x_center = (xlim[0] + xlim[1]) / 2
+        y_center = (ylim[0] + ylim[1]) / 2
+        x_range = xlim[1] - xlim[0]
+        y_range = ylim[1] - ylim[0]
+        # 滚轮向上放大，向下缩小
+        scale = 0.9 if event.button == 'up' else 1.1
+        ax.set_xlim([x_center - x_range * scale / 2, x_center + x_range * scale / 2])
+        ax.set_ylim([y_center - y_range * scale / 2, y_center + y_range * scale / 2])
+        fig.canvas.draw_idle()
+    
+    fig.canvas.mpl_connect('scroll_event', on_scroll)
     plt.show(block=False)
 
 

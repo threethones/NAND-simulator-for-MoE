@@ -693,6 +693,30 @@ class NandSimulatorGUI:
                        fontsize=9, bbox_to_anchor=(0.5, 0.0))
             fig.suptitle(title or "Layout", fontsize=12)
             plt.tight_layout(rect=[0, 0.06, 1, 1])
+            
+            # 添加滚轮缩放功能
+            def on_scroll(event):
+                if event.inaxes is None:
+                    return
+                ax = event.inaxes
+                xlim = ax.get_xlim()
+                ylim = ax.get_ylim()
+                x_range = xlim[1] - xlim[0]
+                y_range = ylim[1] - ylim[0]
+                # 滚轮向上放大，向下缩小
+                scale = 0.9 if event.button == 'up' else 1.1
+                # 以鼠标位置为中心缩放
+                x_center = event.xdata
+                y_center = event.ydata
+                new_xlim = [x_center - (x_center - xlim[0]) * scale,
+                           x_center + (xlim[1] - x_center) * scale]
+                new_ylim = [y_center - (y_center - ylim[0]) * scale,
+                           y_center + (ylim[1] - y_center) * scale]
+                ax.set_xlim(new_xlim)
+                ax.set_ylim(new_ylim)
+                fig.canvas.draw_idle()
+            
+            fig.canvas.mpl_connect('scroll_event', on_scroll)
             plt.show(block=False)  # 非阻塞模式
         except Exception as e:
             print(f"\n\u56fe\u8868\u663e\u793a\u9519\u8bef: {e}")
