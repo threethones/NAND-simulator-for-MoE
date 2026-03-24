@@ -106,7 +106,7 @@ class NandSimulatorGUI:
         self._init_topk_tab()
     
     def _create_scrollable_left_panel(self, parent):
-        """创建带滚动条的左侧面板"""
+        """创建带蓝色滚动条的左侧面板"""
         # 创建 Canvas 和滚动条容器（固定宽度240像素，容纳长标签）
         container = tk.Frame(parent, bg=self.colors['frame'], bd=2, relief=tk.GROOVE, width=240)
         container.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
@@ -116,14 +116,15 @@ class NandSimulatorGUI:
         canvas = tk.Canvas(container, bg=self.colors['frame'], highlightthickness=0)
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
-        # 创建明显的滚动条（使用 tk.Scrollbar 而不是 ttk.Scrollbar 以便自定义样式）
+        # 创建蓝色滚动条
         scrollbar = tk.Scrollbar(container, orient="vertical", command=canvas.yview,
-                                  width=20,  # 更宽的滚动条
-                                  bg='#cccccc',  # 背景色
-                                  troughcolor='#f0f0f0',  # 槽颜色
-                                  highlightthickness=0,
-                                  relief=tk.RAISED)  # 凸起效果
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(2, 0))
+                                  width=18,
+                                  bg='#2196F3',  # 蓝色背景
+                                  activebackground='#1976D2',  # 激活时深蓝
+                                  troughcolor='#E3F2FD',  # 浅蓝槽
+                                  relief=tk.RAISED,
+                                  highlightthickness=0)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         canvas.configure(yscrollcommand=scrollbar.set)
         
         # 创建内部框架存放控件
@@ -139,10 +140,47 @@ class NandSimulatorGUI:
         def on_mousewheel(event):
             canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         canvas.bind("<MouseWheel>", on_mousewheel)
-        # 也绑定到内部框架
         left_panel.bind("<MouseWheel>", on_mousewheel)
         
         return left_panel, canvas
+    
+    def _create_scrollable_output_panel(self, parent, title):
+        """创建带蓝色滚动条的右侧输出面板"""
+        # 创建容器
+        container = tk.Frame(parent, bg=self.colors['frame'], bd=2, relief=tk.GROOVE)
+        container.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        
+        # 标题
+        tk.Label(container, text=title, 
+                 bg=self.colors['frame'], font=('Microsoft YaHei', 10, 'bold')).pack(pady=5)
+        
+        # 创建文本区域容器
+        text_frame = tk.Frame(container, bg=self.colors['frame'])
+        text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        # 创建蓝色滚动条
+        scrollbar = tk.Scrollbar(text_frame, orient="vertical",
+                                  width=18,
+                                  bg='#2196F3',
+                                  activebackground='#1976D2',
+                                  troughcolor='#E3F2FD',
+                                  relief=tk.RAISED,
+                                  highlightthickness=0)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 创建文本区域
+        text_widget = tk.Text(text_frame, wrap=tk.NONE, 
+                              font=('Consolas', 10),
+                              yscrollcommand=scrollbar.set)
+        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=text_widget.yview)
+        
+        # 绑定鼠标滚轮
+        def on_mousewheel(event):
+            text_widget.yview_scroll(int(-1*(event.delta/120)), "units")
+        text_widget.bind("<MouseWheel>", on_mousewheel)
+        
+        return text_widget
     
     def _init_sim_tab(self):
         """初始化主模拟标签页"""
@@ -291,20 +329,8 @@ class NandSimulatorGUI:
                           variable=self.show_plot_var, 
                           bg=self.colors['frame']).pack(fill=tk.X, padx=5, pady=(0, 5))
         
-        # 右侧：输出显示面板
-        right_panel = tk.Frame(main_container, bg=self.colors['frame'], bd=2, relief=tk.GROOVE)
-        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-        
-        # 输出文本区域
-        tk.Label(right_panel, text="\u6a21\u62df\u7ed3\u679c", 
-                 bg=self.colors['frame'], font=('Microsoft YaHei', 10, 'bold')).pack(pady=5)
-        
-        self.output_text = scrolledtext.ScrolledText(
-            right_panel, wrap=tk.NONE, 
-            font=('Consolas', 10),
-            width=100, height=35
-        )
-        self.output_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        # 右侧：带蓝色滚动条的输出显示面板
+        self.output_text = self._create_scrollable_output_panel(main_container, "\u6a21\u62df\u7ed3\u679c")
     
     def _init_topk_tab(self):
         """初始化专家命中仿真标签页"""
@@ -437,20 +463,8 @@ class NandSimulatorGUI:
                           variable=self.topk_show_plot_var, 
                           bg=self.colors['frame']).pack(fill=tk.X, padx=5, pady=(0, 5))
         
-        # 右侧：结果显示面板
-        right_panel = tk.Frame(main_container, bg=self.colors['frame'], bd=2, relief=tk.GROOVE)
-        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-        
-        # 输出文本区域
-        tk.Label(right_panel, text="\u4e13\u5bb6\u547d\u4e2d\u8bfbNAND\u884c\u4e3a\u5206\u6790", 
-                 bg=self.colors['frame'], font=('Microsoft YaHei', 10, 'bold')).pack(pady=5)
-        
-        self.topk_output_text = scrolledtext.ScrolledText(
-            right_panel, wrap=tk.NONE, 
-            font=('Consolas', 10),
-            width=120, height=40
-        )
-        self.topk_output_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        # 右侧：带蓝色滚动条的输出显示面板
+        self.topk_output_text = self._create_scrollable_output_panel(main_container, "\u4e13\u5bb6\u547d\u4e2d\u8bfbNAND\u884c\u4e3a\u5206\u6790")
     
     def _show_preset_menu(self):
         """显示预设菜单"""
