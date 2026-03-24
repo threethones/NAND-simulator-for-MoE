@@ -107,42 +107,46 @@ class NandSimulatorGUI:
     
     def _create_scrollable_left_panel(self, parent):
         """创建带蓝色滚动条的左侧面板"""
-        # 创建 Canvas 和滚动条容器（固定宽度240像素，容纳长标签）
-        container = tk.Frame(parent, bg=self.colors['frame'], bd=2, relief=tk.GROOVE, width=240)
-        container.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
-        container.pack_propagate(False)  # 禁止子控件改变容器大小
+        # 创建主容器（固定宽度240像素）
+        outer_frame = tk.Frame(parent, bg=self.colors['frame'], bd=2, relief=tk.GROOVE, width=260)
+        outer_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        outer_frame.pack_propagate(False)
         
-        # 创建 Canvas
-        canvas = tk.Canvas(container, bg=self.colors['frame'], highlightthickness=0)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        # 创建蓝色滚动条容器（带边框使其更明显）
-        scrollbar_frame = tk.Frame(container, bg='#1976D2', bd=2, relief=tk.RIDGE)
-        scrollbar_frame.pack(side=tk.RIGHT, fill=tk.Y)
+        # 创建滚动条容器（放在最右边）
+        scrollbar_container = tk.Frame(outer_frame, bg='#1976D2', width=24)
+        scrollbar_container.pack(side=tk.RIGHT, fill=tk.Y)
+        scrollbar_container.pack_propagate(False)
         
         # 创建蓝色滚动条
-        scrollbar = tk.Scrollbar(scrollbar_frame, orient="vertical", command=canvas.yview,
+        scrollbar = tk.Scrollbar(scrollbar_container, orient="vertical",
                                   width=20,
                                   bg='#2196F3',
                                   activebackground='#0D47A1',
                                   troughcolor='#BBDEFB',
                                   relief=tk.RAISED,
-                                  bd=2,
-                                  highlightthickness=1,
-                                  highlightbackground='#1976D2')
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=1, pady=1)
-        canvas.configure(yscrollcommand=scrollbar.set)
+                                  bd=2)
+        scrollbar.pack(fill=tk.Y, expand=True, padx=1, pady=1)
+        
+        # 创建内容画布
+        canvas = tk.Canvas(outer_frame, bg=self.colors['frame'], 
+                          highlightthickness=0,
+                          yscrollcommand=scrollbar.set)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=canvas.yview)
         
         # 创建内部框架存放控件
         left_panel = tk.Frame(canvas, bg=self.colors['frame'])
-        canvas.create_window((0, 0), window=left_panel, anchor="nw")
+        canvas_window = canvas.create_window((0, 0), window=left_panel, anchor="nw", width=230)
         
         # 绑定事件更新滚动区域
         def on_frame_configure(event):
             canvas.configure(scrollregion=canvas.bbox("all"))
+            # 确保内部框架宽度与画布一致
+            canvas.itemconfig(canvas_window, width=canvas.winfo_width())
         left_panel.bind("<Configure>", on_frame_configure)
+        canvas.bind("<Configure>", lambda e: canvas.itemconfig(canvas_window, width=e.width))
         
-        # 绑定鼠标滚轮（只在 Canvas 区域内有效）
+        # 绑定鼠标滚轮
         def on_mousewheel(event):
             canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         canvas.bind("<MouseWheel>", on_mousewheel)
