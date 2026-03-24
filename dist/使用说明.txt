@@ -1,0 +1,47 @@
+NAND Flash MoE Simulator 使用说明
+=====================================
+
+【系统要求】
+- Windows 10/11 64位系统
+- 无需安装 Python，单个 EXE 直接运行
+
+【使用方式】
+1. 双击 "NAND_MoE_Simulator.exe" 启动图形界面
+2. 在左侧配置硬件参数（通道数、Plane数、带宽等）
+3. 设置 MoE 模型参数（Expert数量、参数大小等）
+4. 选择布局模式：
+   - CH-first (跳跃SLC): 基线布局，跨Channel分散
+   - PL-first (默认SLC): 预取优化布局，Channel内Plane顺序
+   - TLC (3页Tier优化): TLC NAND优化，每Plane 3页成组，最大化Tier预取
+5. 勾选预取选项（建议都启用）
+6. 点击 "运行模拟" 查看结果
+
+【三种布局对比】
+
+CH-first (跳跃SLC):
+- 数据在所有Channel间轮询分配
+- 预取效果差，作为基线对比
+
+PL-first (默认SLC):
+- 每个Channel内按Plane顺序填充
+- 支持intra-expert预取（gate→up→down）
+
+TLC (3页Tier优化):
+- 针对TLC NAND的3页Tier结构优化
+- 每Plane连续填充3页（Lower/Middle/Upper）
+- 最大化Tier级预取命中率
+
+【专家命中仿真功能】
+- 点击 "专家命中仿真" 标签页
+- 配置参数后运行 Monte Carlo 模拟
+- 对比三种访问模式（顺序/局部随机/全随机）× 四种预取组合
+
+【注意事项】
+- 首次运行可能需要几秒钟加载
+- 布局可视化图表会弹出独立窗口
+- 分析结果可以直接复制或截图保存
+- 左侧面板支持鼠标滚轮滚动
+
+【技术参数参考】
+- 低配 NAND: 4通道, 4Plane/CH, 1.75GB/s, tR=50us
+- 高配 NAND: 8通道, 8Plane/CH, 3.75GB/s, tR=22us

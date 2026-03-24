@@ -187,7 +187,7 @@ def place_experts_page_rr_pl_first(
 
 
 # ================================================================== #
-#  布局函数：TLC（3页Tier优化）                                        #
+#  布局函数：TLC（3-Page Channel-Round-Robin）                           #
 # ================================================================== #
 
 def place_experts_tlc(
@@ -198,40 +198,44 @@ def place_experts_tlc(
     down_bytes: int,
 ) -> "NandSimulator":
     """
-    TLC 布局：每 3 页（一个 Tier 组）按 Plane 递增填满，再切换 Channel。
+    TLC 布局：Channel 内按 Page 优先（所有 Planes），3 个 Page 为一组跨 Channel 填充。
     
-    填充顺序：
-      CH0/PL0/Page0 → CH0/PL0/Page1 → CH0/PL0/Page2  (3页tier组)
-      → CH0/PL1/Page0 → CH0/PL1/Page1 → CH0/PL1/Page2
-      → ... (填完 CH0 所有 Plane)
-      → CH1/PL0/Page0 → CH1/PL0/Page1 → CH1/PL0/Page2...
+    填充顺序（以 8 Plane/CH, 8 Channel 为例）：
+      Gate 部分：
+        CH0/Page0/PL0-7  (CH0的Page0所有Planes)
+        → CH0/Page1/PL0-7  (CH0的Page1所有Planes)
+        → CH0/Page2/PL0-7  (CH0的Page2所有Planes)  ← CH0的3行写满
+        → CH1/Page0/PL0-7  (切换到CH1，Page0)
+        → CH1/Page1/PL0-7  (CH1的Page1)
+        → CH1/Page2/PL0-7  (CH1的Page2)  ← CH1的3行写满
+        → CH2/Page0/PL0-7  (切换到CH2)
+        → ... (Gate部分完成)
+      → Up 部分（按相同顺序）
+      → Down 部分（按相同顺序）
     
-    优势：利用 TLC 3-page tier 特性，gate/up/down 更可能落在同一 Plane 的连续 3 页，
-          实现 intra-expert 预取最大化。
+    优势：专家内部按 gate/up/down 顺序存储，每个 part 在 Channel 内 Page 优先，
+          3-Page 分组跨 Channel 填充，平衡了 Channel 并行度和 Page 局部性。
     """
     C, P, S = geo.channels, geo.planes_per_channel, geo.page_size_bytes
-    TIER_SIZE = 3  # TLC: 3 pages per tier
+    PAGES_PER_GROUP = 3  # TLC: 3 Pages per group (3 rows)
 
     def map_global_to_phy(g: int):
         in_off = g % S
         k = g // S
         
-        # 将全局页索引转换为 (tier组内页, tier组号)
-        tier_page = k % TIER_SIZE  # 0, 1, 2 within tier
-        tier_idx = k // TIER_SIZE  # which tier
+        # 在 Channel 内：所有 Planes 视为一个整体，Page 递增
+        # 每 P 个位置对应一个 Page（因为每个 Page 有 P 个 Planes）
+        page_in_group = (k // P) % PAGES_PER_GROUP  # 在 3-Page 组内的 Page 索引
+        group_idx = k // (P * PAGES_PER_GROUP)      # 哪个 3-Page 组
         
-        # 每个 tier 组内按 Plane 递增
-        # tier_idx 映射到 (ch, pl)
-        # 先填满 CH0 的所有 Plane，每个 Plane 3 页
-        planes_per_ch = P
-        tier_in_channel = tier_idx % (planes_per_ch * TIER_SIZE)
-        ch = tier_idx // (planes_per_ch * TIER_SIZE)
+        # 跨 Channel 轮询：每 3 个 Page 写满后切换 Channel
+        ch = group_idx % C
+        pos_in_ch = group_idx // C
         
-        # 在 Channel 内：pl 递增，每个 pl 占 3 个 tier 位置
-        pl = (tier_in_channel // TIER_SIZE) % planes_per_ch
-        # page = tier_page + 3 * (tier_in_channel // 3) 的变体
-        # 实际上 page 就是 tier_in_channel 的映射
-        page = tier_in_channel
+        # 在 Channel 内的位置决定 Page
+        page = page_in_group + (pos_in_ch % (1024 // PAGES_PER_GROUP)) * PAGES_PER_GROUP
+        # Plane 由组内位置决定
+        pl = k % P
         
         return ch, pl, page, in_off
 
