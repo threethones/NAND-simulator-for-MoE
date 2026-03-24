@@ -116,15 +116,21 @@ class NandSimulatorGUI:
         canvas = tk.Canvas(container, bg=self.colors['frame'], highlightthickness=0)
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
+        # 创建蓝色滚动条容器（带边框使其更明显）
+        scrollbar_frame = tk.Frame(container, bg='#1976D2', bd=2, relief=tk.RIDGE)
+        scrollbar_frame.pack(side=tk.RIGHT, fill=tk.Y)
+        
         # 创建蓝色滚动条
-        scrollbar = tk.Scrollbar(container, orient="vertical", command=canvas.yview,
-                                  width=18,
-                                  bg='#2196F3',  # 蓝色背景
-                                  activebackground='#1976D2',  # 激活时深蓝
-                                  troughcolor='#E3F2FD',  # 浅蓝槽
+        scrollbar = tk.Scrollbar(scrollbar_frame, orient="vertical", command=canvas.yview,
+                                  width=20,
+                                  bg='#2196F3',
+                                  activebackground='#0D47A1',
+                                  troughcolor='#BBDEFB',
                                   relief=tk.RAISED,
-                                  highlightthickness=0)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+                                  bd=2,
+                                  highlightthickness=1,
+                                  highlightbackground='#1976D2')
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=1, pady=1)
         canvas.configure(yscrollcommand=scrollbar.set)
         
         # 创建内部框架存放控件
@@ -158,15 +164,21 @@ class NandSimulatorGUI:
         text_frame = tk.Frame(container, bg=self.colors['frame'])
         text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
+        # 创建蓝色滚动条容器（带边框使其更明显）
+        scrollbar_frame = tk.Frame(text_frame, bg='#1976D2', bd=2, relief=tk.RIDGE)
+        scrollbar_frame.pack(side=tk.RIGHT, fill=tk.Y)
+        
         # 创建蓝色滚动条
-        scrollbar = tk.Scrollbar(text_frame, orient="vertical",
-                                  width=18,
+        scrollbar = tk.Scrollbar(scrollbar_frame, orient="vertical",
+                                  width=20,
                                   bg='#2196F3',
-                                  activebackground='#1976D2',
-                                  troughcolor='#E3F2FD',
+                                  activebackground='#0D47A1',
+                                  troughcolor='#BBDEFB',
                                   relief=tk.RAISED,
-                                  highlightthickness=0)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+                                  bd=2,
+                                  highlightthickness=1,
+                                  highlightbackground='#1976D2')
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=1, pady=1)
         
         # 创建文本区域
         text_widget = tk.Text(text_frame, wrap=tk.NONE, 
