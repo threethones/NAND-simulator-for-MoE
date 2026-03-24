@@ -112,20 +112,21 @@ class NandSimulatorGUI:
         outer_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
         outer_frame.pack_propagate(False)
         
-        # 创建滚动条容器（放在最右边）
-        scrollbar_container = tk.Frame(outer_frame, bg='#1976D2', width=24)
+        # 创建滚动条容器（优雅的浅灰色背景）
+        scrollbar_container = tk.Frame(outer_frame, bg='#E8E8E8', width=18)
         scrollbar_container.pack(side=tk.RIGHT, fill=tk.Y)
         scrollbar_container.pack_propagate(False)
         
-        # 创建蓝色滚动条
+        # 创建优雅风格的滚动条
         scrollbar = tk.Scrollbar(scrollbar_container, orient="vertical",
-                                  width=20,
-                                  bg='#2196F3',
-                                  activebackground='#0D47A1',
-                                  troughcolor='#BBDEFB',
-                                  relief=tk.RAISED,
-                                  bd=2)
-        scrollbar.pack(fill=tk.Y, expand=True, padx=1, pady=1)
+                                  width=14,
+                                  bg='#A0A0A0',           # 柔和的灰色滑块
+                                  activebackground='#808080',  # 悬停时稍深
+                                  troughcolor='#F5F5F5',   # 极浅的灰白轨道
+                                  relief=tk.FLAT,          # 扁平化设计
+                                  bd=0,                    # 无边框
+                                  highlightthickness=0)
+        scrollbar.pack(fill=tk.Y, expand=True, padx=2, pady=4)
         
         # 创建内容画布
         canvas = tk.Canvas(outer_frame, bg=self.colors['frame'], 
@@ -155,7 +156,7 @@ class NandSimulatorGUI:
         return left_panel, canvas
     
     def _create_scrollable_output_panel(self, parent, title):
-        """创建带蓝色滚动条的右侧输出面板"""
+        """创建带优雅滚动条的右侧输出面板"""
         # 创建容器
         container = tk.Frame(parent, bg=self.colors['frame'], bd=2, relief=tk.GROOVE)
         container.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
@@ -168,21 +169,21 @@ class NandSimulatorGUI:
         text_frame = tk.Frame(container, bg=self.colors['frame'])
         text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        # 创建蓝色滚动条容器（带边框使其更明显）
-        scrollbar_frame = tk.Frame(text_frame, bg='#1976D2', bd=2, relief=tk.RIDGE)
+        # 创建优雅滚动条容器
+        scrollbar_frame = tk.Frame(text_frame, bg='#E8E8E8', width=18)
         scrollbar_frame.pack(side=tk.RIGHT, fill=tk.Y)
+        scrollbar_frame.pack_propagate(False)
         
-        # 创建蓝色滚动条
+        # 创建优雅风格的滚动条
         scrollbar = tk.Scrollbar(scrollbar_frame, orient="vertical",
-                                  width=20,
-                                  bg='#2196F3',
-                                  activebackground='#0D47A1',
-                                  troughcolor='#BBDEFB',
-                                  relief=tk.RAISED,
-                                  bd=2,
-                                  highlightthickness=1,
-                                  highlightbackground='#1976D2')
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=1, pady=1)
+                                  width=14,
+                                  bg='#A0A0A0',
+                                  activebackground='#808080',
+                                  troughcolor='#F5F5F5',
+                                  relief=tk.FLAT,
+                                  bd=0,
+                                  highlightthickness=0)
+        scrollbar.pack(fill=tk.Y, expand=True, padx=2, pady=4)
         
         # 创建文本区域
         text_widget = tk.Text(text_frame, wrap=tk.NONE, 
