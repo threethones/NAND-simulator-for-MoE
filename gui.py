@@ -645,9 +645,9 @@ class NandSimulatorGUI:
             from matplotlib.patches import Rectangle
             from collections import defaultdict
             
-            # 解析 expert IDs
+            # 解析 expert IDs（支持离散和连续格式，如 "0,1,2" 或 "0-9" 或 "0-3,5,7-9"）
             expert_ids_str = self.expert_ids_var.get()
-            expert_ids = [int(x.strip()) for x in expert_ids_str.split(',') if x.strip()]
+            expert_ids = parse_expert_ids(expert_ids_str)
             
             part_order = ["gate", "up", "down"]
             title = f"Expert Layout ({self.layout_var.get()})"
