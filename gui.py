@@ -667,22 +667,29 @@ class NandSimulatorGUI:
             
             max_page_seen = max(slc.page for slc in all_slices)
             need_pages = max_page_seen + 1
-            max_pages = max(1, min(max_pages, need_pages)) if max_pages else need_pages
+            # 限制显示页数，避免图表过大
+            display_pages = max(1, min(max_pages, need_pages))
             
             part_colors = {
                 "gate": mpl.colors.to_rgba("#1f77b4"),
                 "up":   mpl.colors.to_rgba("#ff7f0e"),
                 "down": mpl.colors.to_rgba("#2ca02c"),
             }
-            annotate_fontsize = max(5, min(8, int(60 / max(max_pages, P))))
+            # 字体大小不再随页数变化，保持固定可读大小
+            annotate_fontsize = 7
             
             # 限制图表默认大小，使其适应屏幕，同时支持缩放
             base_width = min(2.0, max(1.2, P * 0.25))  # 每Channel宽度
-            base_height = min(0.25, max(0.15, 8.0 / max_pages)) if max_pages > 0 else 0.2
+            # 高度计算使用显示的页数，但限制在合理范围内
+            base_height = 0.15  # 每页固定高度
             figsize = (
                 min(16, max(8, C * base_width)),      # 总宽度限制在 8-16 英寸
-                min(10, max(6, max_pages * base_height))  # 总高度限制在 6-10 英寸
+                min(12, max(6, display_pages * base_height))  # 总高度限制在 6-12 英寸
             )
+            
+            # 如果实际页数超过显示限制，打印提示
+            if need_pages > max_pages:
+                print(f"[提示] Expert 分布在 {need_pages} 个 Page，仅显示前 {display_pages} 页")
             
             fig, axes = plt.subplots(1, C, figsize=figsize, sharey=True, squeeze=False)
             fig.canvas.manager.set_window_title('Expert Layout (支持鼠标滚轮缩放)')
@@ -691,14 +698,14 @@ class NandSimulatorGUI:
             for ch in range(C):
                 ax = axes[ch]
                 for pl in range(P):
-                    for pg in range(max_pages):
+                    for pg in range(display_pages):
                         ax.add_patch(Rectangle((pl, pg), 1, 1,
                             linewidth=0.4, edgecolor="#aaaaaa", facecolor="white", zorder=0))
                 
                 cell = defaultdict(list)
                 for eid in expert_ids:
                     for slc in sim._ep_map[eid].all_slices():
-                        if slc.ch == ch and slc.part in part_order and slc.page < max_pages:
+                        if slc.ch == ch and slc.part in part_order and slc.page < display_pages:
                             entry = (slc.part, eid)
                             if entry not in cell[(slc.pl, slc.page)]:
                                 cell[(slc.pl, slc.page)].append(entry)
@@ -716,13 +723,13 @@ class NandSimulatorGUI:
                 
                 ax.set_title(f"CH{ch}", fontsize=11)
                 ax.set_xlim(0, P)
-                ax.set_ylim(0, max_pages)
+                ax.set_ylim(0, display_pages)
                 ax.set_xticks([i + 0.5 for i in range(P)])
                 ax.set_xticklabels([f"PL{i}" for i in range(P)], fontsize=9)
                 ax.set_xlabel("Plane", fontsize=8)
                 ax.invert_yaxis()
-                ax.set_yticks(range(max_pages))
-                ax.set_yticklabels([str(pg) for pg in range(max_pages)], fontsize=7)
+                ax.set_yticks(range(display_pages))
+                ax.set_yticklabels([str(pg) for pg in range(display_pages)], fontsize=7)
             
             axes[0].set_ylabel("Page(row)", fontsize=10)
             handles = [mpl.patches.Patch(color=part_colors[p], label=p) for p in ("gate", "up", "down")]
