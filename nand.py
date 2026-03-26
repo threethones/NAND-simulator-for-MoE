@@ -731,6 +731,10 @@ def print_sequential_latency_table(
     steps    = [(eid, part) for eid in expert_ids for part in part_order]
     prev_eid = None
     rows_csv = []
+    
+    # 如果 expert 7 在列表中，记录其详细信息用于后续高亮显示
+    highlight_eid = 7 if 7 in expert_ids else None
+    expert7_detail = []
 
     for i, (eid, part) in enumerate(steps):
         st    = r["step_stats"][(eid, part)]
@@ -766,7 +770,15 @@ def print_sequential_latency_table(
         if is_first_step and i > 0:
             print()
         
-        print(f"  {eid:>3} {part:>5} | {tr_str} {hid_str} | {tx_str} {saved_str} | {time_str} | {notes_str}")
+        # 高亮显示 expert 7
+        if eid == highlight_eid:
+            print(f"  >>>{eid:>3} {part:>5} | {tr_str} {hid_str} | {tx_str} {saved_str} | {time_str} | {notes_str} <<<")
+            expert7_detail.append({
+                'part': part, 'tr': tr_val, 'hid': hid_val, 'tx': tx_val,
+                'saved': saved_val, 'time': time_val, 'notes': notes_str
+            })
+        else:
+            print(f"  {eid:>3} {part:>5} | {tr_str} {hid_str} | {tx_str} {saved_str} | {time_str} | {notes_str}")
 
         rows_csv.append([eid, part,
                          f"{st['tr_sec']*1e6:.2f}", f"{st['hid_sec']*1e6:.2f}",
@@ -774,6 +786,16 @@ def print_sequential_latency_table(
                          st['cached_planes'], f"{st['saved_sec']*1e6:.2f}",
                          f"{st['time_sec']*1e6:.2f}"])
         prev_eid = eid
+    
+    # 如果 expert 7 在列表中，输出其详细汇总
+    if highlight_eid is not None and expert7_detail:
+        print(f"\n  [Expert 7 详细分析]")
+        total_time_7 = sum(d['time'] for d in expert7_detail)
+        total_saved_7 = sum(d['saved'] for d in expert7_detail)
+        print(f"    gate:  tR={expert7_detail[0]['tr']:.2f}us, tX={expert7_detail[0]['tx']:.2f}us, time={expert7_detail[0]['time']:.2f}us")
+        print(f"    up:    tR={expert7_detail[1]['tr']:.2f}us, tX={expert7_detail[1]['tx']:.2f}us, time={expert7_detail[1]['time']:.2f}us")
+        print(f"    down:  tR={expert7_detail[2]['tr']:.2f}us, tX={expert7_detail[2]['tx']:.2f}us, time={expert7_detail[2]['time']:.2f}us")
+        print(f"    总计:  {total_time_7:.2f}us (saved={total_saved_7:.2f}us)")
 
     # 计算带宽分析数据
 
